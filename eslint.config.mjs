@@ -7,8 +7,8 @@ import stylistic from '@stylistic/eslint-plugin';
 export default [
   {
     plugins: {
-      '@stylistic': stylistic
-    }
+      '@stylistic': stylistic,
+    },
   },
   {files: ['**/*.{js,mjs,cjs,ts}']},
   {languageOptions: { globals: {...globals.browser, ...globals.node} }},
@@ -30,5 +30,5 @@ export default [
   },
   {
     ignores: ['dist/**/*'],
-  }
+  },
 ];
