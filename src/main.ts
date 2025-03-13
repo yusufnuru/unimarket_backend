@@ -6,6 +6,11 @@ import connectToDatabase from './config/db';
 import { NODE_ENV, APP_ORIGIN, PORT } from './constants/env';
 import errorHandler from './middleware/errorHandler';
 import authRoutes from './auth/authRoutes';
+<<<<<<< HEAD
+=======
+import { authenticate, authorizeRole } from './middleware/authenticate';
+import userRoutes from './user/shared/sharedRoutes';
+>>>>>>> 034d025 (feat: enhance server setup with CORS, cookie parsing, and structured routing)
 const app = express();
 
 app.use(express.json());
@@ -16,8 +21,18 @@ app.use(cors({
 }));
 app.use(cookieParser());
 
+<<<<<<< HEAD
 app.use('/auth', authRoutes);
 
+=======
+// Routes
+// auth routes
+app.use('/auth', authRoutes);
+
+// protected routes
+app.use('/user', authenticate, authorizeRole(['admin', 'seller', 'buyer']), userRoutes);
+
+>>>>>>> 034d025 (feat: enhance server setup with CORS, cookie parsing, and structured routing)
 app.use((req, res, next) => {
   console.log('Request URL:', req.url);
   console.log('Request originalUrl:', req.originalUrl);
