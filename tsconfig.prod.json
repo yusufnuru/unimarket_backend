@@ -1,0 +1,20 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "baseUrl": ".dist", // Use project root as base
+    "paths": {
+      "@config/*": ["./src/config/*"], // Point to compiled files
+      "@admin/*": ["./src/admin/*"],
+      "@auth/*": ["./src/auth/*"],
+      "@constants/*": ["./src/constants/*"],
+      "@messaging/*": ["./src/messaging/*"],
+      "@middleware/*": ["./src/middleware/*"],
+      "@schema/*": ["./src/schema/*"],
+      "@types/*": ["./src/types/*"],
+      "@user/*": ["./src/user/*"],
+      "@shared/*": ["./src/shared/*"],
+      "@utils/*": ["./src/utils/*"],
+      "@src/*": ["./src/*"]
+    }
+  }
+}
