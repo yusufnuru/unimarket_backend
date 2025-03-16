@@ -1,34 +1,82 @@
+// @ts-check
 import globals from 'globals';
 import pluginJs from '@eslint/js';
 import tseslint from 'typescript-eslint';
 import stylistic from '@stylistic/eslint-plugin';
+import prettier from 'eslint-plugin-prettier';
+import prettierConfig from 'eslint-config-prettier';
 
-/** @type {import('eslint').Linter.Config[]} */
-export default [
+export default tseslint.config(
+  // Ignore patterns
+  {
+    ignores: ['dist/**/*', 'eslint.config.mjs'],
+  },
+
+  // Base configs
+  pluginJs.configs.recommended,
+  ...tseslint.configs.recommendedTypeChecked,
+  prettierConfig, // Add Prettier config to disable conflicting rules
+
+  // Language options
+  {
+    languageOptions: {
+      globals: {
+        ...globals.browser,
+        ...globals.node,
+        ...globals.jest,
+      },
+      sourceType: 'module',
+      parserOptions: {
+        projectService: true,
+        tsconfigRootDir: import.meta.dirname,
+      },
+    },
+    files: ['**/*.{js,mjs,cjs,ts}'],
+  },
+
+  // Plugins and custom rules
   {
     plugins: {
       '@stylistic': stylistic,
+      prettier: prettier, // Add Prettier plugin
     },
-  },
-  {files: ['**/*.{js,mjs,cjs,ts}']},
-  {languageOptions: { globals: {...globals.browser, ...globals.node} }},
-  pluginJs.configs.recommended,
-  ...tseslint.configs.recommended,
-  {
     rules: {
-      'quotes': ['error', 'single'],  // Enforce single quotes
-      'semi': ['error', 'always'],    // Enforce semicolons,
-      '@stylistic/semi': 'off', // disable the stylistic rule for semicolons
+      // TypeScript rules (balanced approach)
+      '@typescript-eslint/no-explicit-any': 'warn',
+      '@typescript-eslint/no-floating-promises': 'error',
+      '@typescript-eslint/no-unsafe-argument': 'error',
+      '@typescript-eslint/no-unsafe-return': 'error',
+
+      // Prettier integration
+      'prettier/prettier': [
+        'error',
+        {
+          printWidth: 100,
+          singleLine: true, // This encourages single-line formatting under printWidth
+          semi: true,
+          singleQuote: true,
+          trailingComma: 'all',
+          bracketSpacing: true,
+        },
+      ],
+
+      // Keep some stylistic rules that don't conflict with Prettier
       '@stylistic/no-extra-semi': 'error',
-      '@stylistic/member-delimiter-style': ['error', {
-        multiline: { delimiter: 'semi' }, // Use semicolons in interfaces
-        singleline: { delimiter: 'comma' }, // Use commas for single-line members
-      }],
-      '@stylistic/comma-dangle': ['error', 'always-multiline'], // Ensure trailing commas
-      '@stylistic/brace-style': ['error', '1tbs', { allowSingleLine: true }], // Use 1
+      '@stylistic/no-trailing-spaces': 'error',
+      '@stylistic/eol-last': ['error', 'always'],
+      '@stylistic/no-multiple-empty-lines': [
+        'error',
+        {
+          max: 1,
+          maxEOF: 1,
+        },
+      ],
+      '@stylistic/max-len': [
+        'error',
+        {
+          code: 100,
+        },
+      ],
     },
   },
-  {
-    ignores: ['dist/**/*'],
-  },
-];
+);
