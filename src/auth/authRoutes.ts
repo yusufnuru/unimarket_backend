@@ -1,5 +1,13 @@
 import { Router } from 'express';
-import { loginHandler, logoutHandler, refreshHandler, registerHandler, verifyEmailHandler, sendPasswordResetHandler, resetPasswordResetHandler } from './authController';
+import {
+  loginHandler,
+  logoutHandler,
+  refreshHandler,
+  registerHandler,
+  verifyEmailHandler,
+  sendPasswordResetHandler,
+  resetPasswordResetHandler,
+} from '@auth/authController.js';
 
 const authRoutes = Router();
 

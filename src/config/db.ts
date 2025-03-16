@@ -1,14 +1,27 @@
-import { drizzle} from 'drizzle-orm/node-postgres';
-import { Pool} from 'pg';
-import * as schema from '../schema';
-import { DB_URL } from '../constants/env';
+import { drizzle } from 'drizzle-orm/node-postgres';
+import pkg from 'pg';
+import * as usersSchema from '@schema/Users.js';
+import * as profilesSchema from '@schema/Profiles.js';
+import * as sessionsSchema from '@schema/Sessions.js';
+import * as verificationCodesSchema from '@schema/VerificationCodes.js';
+import { DB_URL } from '@src/constants/env.js';
 
+const { Pool } = pkg;
 const pool = new Pool({
   connectionString: DB_URL,
 });
 
-const connectToDatabase = async () => {
-  try{
+export const db = drizzle(pool, {
+  schema: {
+    ...usersSchema,
+    ...profilesSchema,
+    ...sessionsSchema,
+    ...verificationCodesSchema,
+  },
+});
+
+export const connectToDatabase = async () => {
+  try {
     const client = await pool.connect();
     console.log('✅ Successfully connected to PostgreSQL with Drizzle');
     client.release();
@@ -18,5 +31,20 @@ const connectToDatabase = async () => {
   }
 };
 
-export default connectToDatabase;
-export const db = drizzle(pool, {schema:  schema}) ;
+export const closeDatabase = async () => {
+  try {
+    await pool.end();
+    console.log('✅ Successfully Database Pool closed');
+  } catch (error) {
+    console.error('❌ Error closing database pool', error);
+  }
+};
+
+export const cleanDb = () => {
+  return db.transaction(async (tx) => {
+    await tx.delete(verificationCodesSchema.VerificationCodes);
+    await tx.delete(sessionsSchema.Sessions);
+    await tx.delete(profilesSchema.Profiles);
+    await tx.delete(usersSchema.Users);
+  });
+};

@@ -1,17 +1,19 @@
-import jwt, { JsonWebTokenError, SignOptions, VerifyOptions } from 'jsonwebtoken';
-import { ACCESS_TOKEN_SECRET, REFRESH_TOKEN_SECRET } from '../constants';
+import jwt, { SignOptions, VerifyOptions } from 'jsonwebtoken';
+import pkg from 'jsonwebtoken';
+import { ACCESS_TOKEN_SECRET, REFRESH_TOKEN_SECRET } from '@src/constants/env.js';
 
+const { JsonWebTokenError } = pkg;
 
 export type RefreshTokenPayload = {
   sessionId: string;
   role: string;
-}
+};
 
 export type AccessTokenPayload = {
   userId: string;
   sessionId: string;
   role: string;
-}
+};
 
 type SignOptionsAndSecret = SignOptions & { secret: string };
 
@@ -27,7 +29,6 @@ export const refreshTokenSignOptions: SignOptionsAndSecret = {
   secret: REFRESH_TOKEN_SECRET,
 };
 
-
 export const signToken = (
   payload: RefreshTokenPayload | AccessTokenPayload,
   options?: SignOptionsAndSecret,
@@ -37,10 +38,9 @@ export const signToken = (
     ...defaults,
     ...signOpts,
   });
-} ;
+};
 
-
-export const verifyToken = <TPayload extends object = AccessTokenPayload> (
+export const verifyToken = <TPayload extends object = AccessTokenPayload>(
   token: string,
   options?: VerifyOptions & { secret: string },
 ) => {

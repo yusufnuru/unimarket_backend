@@ -1,43 +1,44 @@
-import 'dotenv/config';
-import express from 'express';
-import cors from 'cors';
-import cookieParser from 'cookie-parser';
-import connectToDatabase from './config/db';
-import { NODE_ENV, APP_ORIGIN, PORT } from './constants/env';
-import errorHandler from './middleware/errorHandler';
-import authRoutes from './auth/authRoutes';
-import { authenticate, authorizeRole } from './middleware/authenticate';
-import userRoutes from './user/shared/sharedRoutes';
-const app = express();
+import { connectToDatabase, closeDatabase } from '@config/db.js';
+import { NODE_ENV, PORT } from '@src/constants/env.js';
+import app from '@src/app.js';
 
-app.use(express.json());
-app.use(express.urlencoded({extended: true}));
-app.use(cors({
-  origin: APP_ORIGIN,
-  credentials: true,
-}));
-app.use(cookieParser());
-
-// Routes
-// auth routes
-app.use('/auth', authRoutes);
-app.use('/auth', authRoutes);
-
-// protected routes
-app.use('/user', authenticate, authorizeRole(['admin', 'seller', 'buyer']), userRoutes);
-
-app.use((req, res, next) => {
-  console.log('Request URL:', req.url);
-  console.log('Request originalUrl:', req.originalUrl);
-  console.log('Request baseUrl:', req.baseUrl);
-  console.log('Request path:', req.path);
-  console.log('Cookies:', req.cookies);
-  next();
-});
-app.use(errorHandler);
-
-
-app.listen(PORT, async () => {
+const server = app.listen(PORT, () => {
   console.log(`[server]: Server is running at http://localhost:${PORT} in ${NODE_ENV} environment`);
-  await connectToDatabase();
+
+  // Use void to explicitly ignore the promise
+  void connectToDatabase()
+    .then(() => {
+      // Database connection successful
+    })
+    .catch((err) => {
+      console.error('Failed to connect to database:', err);
+      process.exit(1);
+    });
 });
+
+function shutdown() {
+  console.log('Shutting down server...');
+
+  server.close(() => {
+    // Use void to explicitly ignore the promise or handle with then/catch
+    void closeDatabase()
+      .then(() => {
+        console.log('Server shut down complete');
+        process.exit(0);
+      })
+      .catch((err) => {
+        console.error('Error closing database connection:', err);
+        process.exit(1);
+      });
+  });
+
+  // Set a timeout to force shutdown if close operations take too long
+  setTimeout(() => {
+    console.error('Forced shutdown after timeout');
+    process.exit(1);
+  }, 10000);
+}
+
+// Use these handlers instead of directly passing the async function
+process.on('SIGINT', () => shutdown());
+process.on('SIGTERM', () => shutdown());

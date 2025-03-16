@@ -1,12 +1,29 @@
-import catchError from '../utils/cacheErrors';
-import { createAccount, deleteSession, loginUser, refreshUserAccessToken, resetPassword, sendPasswordResetEmail, verifyEmail } from './authService';
-import { clearAuthCookies, getAccessTokenCookieOptions, getRefreshTokenCookieOptions, setAuthCookies } from '../utils/cookies';
-import { registerSchema, loginSchema, verificationCodeSchema, emailSchema} from './authSchema';
-import { verifyToken } from '../utils/jwt';
-import { CREATED, OK, UNAUTHORIZED } from '../constants';
-import appAssert from '../utils/appAssert';
-import { resetPasswordSchema } from './authSchema/resetPassword';
-
+import catchError from '@utils/cacheErrors.js';
+import {
+  createAccount,
+  deleteSession,
+  loginUser,
+  refreshUserAccessToken,
+  resetPassword,
+  sendPasswordResetEmail,
+  verifyEmail,
+} from '@auth/authService.js';
+import {
+  clearAuthCookies,
+  getAccessTokenCookieOptions,
+  getRefreshTokenCookieOptions,
+  setAuthCookies,
+} from '@utils/cookies.js';
+import {
+  registerSchema,
+  loginSchema,
+  verificationCodeSchema,
+  emailSchema,
+} from '@auth/authSchema.js';
+import { verifyToken } from '@utils/jwt.js';
+import { CREATED, OK, UNAUTHORIZED } from '@constants/http.js';
+import appAssert from '@utils/appAssert.js';
+import { resetPasswordSchema } from '@auth/authSchema.js';
 
 export const registerHandler = catchError(async (req, res) => {
   const request = registerSchema.parse({
@@ -18,9 +35,8 @@ export const registerHandler = catchError(async (req, res) => {
   const { user, accessToken, refreshToken } = await createAccount(request);
 
   // return response
-  setAuthCookies({res, accessToken, refreshToken}).status(CREATED).json({user});
+  setAuthCookies({ res, accessToken, refreshToken }).status(CREATED).json({ user });
 });
-
 
 export const loginHandler = catchError(async (req, res) => {
   const request = loginSchema.parse({
@@ -29,18 +45,17 @@ export const loginHandler = catchError(async (req, res) => {
   });
 
   // call service
-  const {refreshToken, accessToken} = await loginUser(request);
+  const { refreshToken, accessToken } = await loginUser(request);
 
   // return response
-  setAuthCookies({res, accessToken, refreshToken}).status(OK).json({
+  setAuthCookies({ res, accessToken, refreshToken }).status(OK).json({
     message: 'Login successful',
   });
 });
 
 export const logoutHandler = catchError(async (req, res) => {
-  
-  const accessToken = req.cookies.accessToken;
-  const {payload} = verifyToken(accessToken);
+  const accessToken = req.cookies.accessToken as string;
+  const { payload } = verifyToken(accessToken);
 
   // call service
   if (payload) {
@@ -54,12 +69,11 @@ export const logoutHandler = catchError(async (req, res) => {
 });
 
 export const refreshHandler = catchError(async (req, res) => {
-
   const refreshToken = req.cookies.refreshToken as string | undefined;
-  appAssert(refreshToken, UNAUTHORIZED,'Missing refresh token');
+  appAssert(refreshToken, UNAUTHORIZED, 'Missing refresh token');
 
   // call service
-  const {accessToken, newRefreshToken} = await refreshUserAccessToken(refreshToken);
+  const { accessToken, newRefreshToken } = await refreshUserAccessToken(refreshToken);
 
   // return response
   if (newRefreshToken) {
@@ -72,7 +86,6 @@ export const refreshHandler = catchError(async (req, res) => {
 });
 
 export const verifyEmailHandler = catchError(async (req, res) => {
-
   const verificationCode = verificationCodeSchema.parse(req.params.code);
 
   // call service
@@ -85,7 +98,10 @@ export const verifyEmailHandler = catchError(async (req, res) => {
 });
 
 export const sendPasswordResetHandler = catchError(async (req, res) => {
-  const email = emailSchema.parse(req.body.email);
+  interface ResquestBody {
+    email: string;
+  }
+  const email = emailSchema.parse((req.body as ResquestBody).email);
 
   // call service
   await sendPasswordResetEmail(email);
@@ -95,7 +111,6 @@ export const sendPasswordResetHandler = catchError(async (req, res) => {
     message: 'Password reset email was successfully sent',
   });
 });
-
 
 export const resetPasswordResetHandler = catchError(async (req, res) => {
   const request = resetPasswordSchema.parse(req.body);
