@@ -14,13 +14,7 @@ import {
 } from '@src/constants/http.js';
 import { VerificationCodeType } from '@src/constants/verificationCodeType.js';
 import { APP_ORIGIN } from '@constants/env.js';
-import {
-  fiveMinutesAgo,
-  ONE_DAY_MS,
-  oneHourFromNow,
-  oneYearFromNow,
-  thirtyDaysFromNow,
-} from '@utils/date.js';
+import { fiveMinutesAgo, fiveMinutesFromNow, ONE_DAY_MS, thirtyDaysFromNow } from '@utils/date.js';
 import appAssert from '@utils/appAssert.js';
 import {
   RefreshTokenPayload,
@@ -28,7 +22,7 @@ import {
   signToken,
   verifyToken,
 } from '@utils/jwt.js';
-import { Email, LoginUserDto, RegisterUserDto, VerificationCode } from '@auth/authSchema.js';
+import { Email, EmailVerification, LoginUserDto, RegisterUserDto } from '@auth/authSchema.js';
 import { getPasswordResetTemplate, getVerifyEmailTemplate } from '@utils/emailTemplate.js';
 import { sendMail } from '@utils/sendMail.js';
 
@@ -80,16 +74,18 @@ export const createAccount = async (dto: RegisterUserDto) => {
   const role = profile.role;
 
   // create verification code
+  const expiresAt = fiveMinutesFromNow().toISOString();
   const [verificationCode] = await db
     .insert(VerificationCodes)
     .values({
       userId,
       type: VerificationCodeType.EMAIL_VERIFICATION,
-      expiresAt: oneYearFromNow().toISOString(),
+      expiresAt,
     })
     .returning();
 
-  const url = `${APP_ORIGIN}/email/verify/${verificationCode.id}`;
+  const url = `http://localhost:${APP_ORIGIN}/email/verify/${verificationCode.id}`;
+
   // send verification code
   const { data, error } = await sendMail({
     to: user.email,
@@ -98,27 +94,10 @@ export const createAccount = async (dto: RegisterUserDto) => {
 
   appAssert(data?.id, INTERNAL_SERVER_ERROR, `${error?.name}: ${error?.message}`);
 
-  // create session
-  const [session] = await db
-    .insert(Sessions)
-    .values({
-      userId,
-      userAgent: dto.userAgent,
-    })
-    .returning({ id: Sessions.id });
-
-  const sessionId = session.id;
-
-  // sign access token & refresh toke
-  const accessToken = signToken({ userId, sessionId, role });
-
-  const refreshToken = signToken({ sessionId, role }, refreshTokenSignOptions);
-
-  // return user and tokens
+  // return user
   return {
-    user,
-    accessToken,
-    refreshToken,
+    ...user,
+    role,
   };
 };
 
@@ -133,6 +112,48 @@ export const loginUser = async (dto: LoginUserDto) => {
   // VALIDATE PASSWORD
   const isValid = await compareValue(dto.password, user.password);
   appAssert(isValid, UNAUTHORIZED, 'Invalid email or password');
+
+  const isVerified = user.verified;
+  if (!isVerified) {
+    // check email rate limit
+    const fiveMinAgo = fiveMinutesAgo().toISOString();
+    const count = await db.$count(
+      VerificationCodes,
+      and(
+        eq(VerificationCodes.userId, user.id),
+        eq(VerificationCodes.type, VerificationCodeType.EMAIL_VERIFICATION),
+        gt(VerificationCodes.createdAt, fiveMinAgo),
+      ),
+    );
+
+    appAssert(count <= 1, TOO_MANY_REQUESTS, 'Too many requests, please try again later');
+
+    const expiresAt = fiveMinutesFromNow().toISOString();
+    const [verificationCode] = await db
+      .insert(VerificationCodes)
+      .values({
+        userId: user.id,
+        type: VerificationCodeType.EMAIL_VERIFICATION,
+        expiresAt,
+      })
+      .returning();
+
+    const url = `http://localhost:${APP_ORIGIN}/email/verify/${verificationCode.id}`;
+
+    // send verification code
+    const { data, error } = await sendMail({
+      to: user.email,
+      ...getVerifyEmailTemplate(url),
+    });
+
+    appAssert(data?.id, INTERNAL_SERVER_ERROR, `${error?.name}: ${error?.message}`);
+
+    appAssert(
+      isVerified,
+      UNAUTHORIZED,
+      'Account not verified. Verification email has been sent to you again',
+    );
+  }
 
   const userId = user.id;
   const role = user.profile.role;
@@ -156,6 +177,90 @@ export const loginUser = async (dto: LoginUserDto) => {
   return {
     accessToken,
     refreshToken,
+  };
+};
+
+export const verifyEmailAndLogin = async (dto: EmailVerification) => {
+  // get the verification code
+  const validVerificationCode = await db.query.VerificationCodes.findFirst({
+    where: (VerificationCodes, { eq, and, gt }) =>
+      and(
+        eq(VerificationCodes.id, dto.verificationCode),
+        eq(VerificationCodes.type, VerificationCodeType.EMAIL_VERIFICATION),
+        gt(VerificationCodes.expiresAt, new Date().toISOString()),
+      ),
+  });
+
+  console.log(validVerificationCode);
+  appAssert(validVerificationCode, NOT_FOUND, 'Invalid OR expired verification code');
+
+  // update user to verified true
+  const [updatedUser] = await db
+    .update(Users)
+    .set({ verified: true })
+    .where(eq(Users.id, validVerificationCode.userId))
+    .returning({
+      id: Users.id,
+      email: Users.email,
+      verified: Users.verified,
+    });
+  console.log(updatedUser);
+  appAssert(updatedUser, INTERNAL_SERVER_ERROR, 'User verification failed');
+
+  const verifiedUser = await db.query.Users.findFirst({
+    where: eq(Users.id, updatedUser.id),
+    with: {
+      profile: {
+        columns: {
+          role: true,
+        },
+      },
+    },
+    columns: {
+      id: true,
+      email: true,
+      verified: true,
+    },
+  });
+
+  console.log(verifiedUser);
+  appAssert(
+    verifiedUser && verifiedUser.verified === true,
+    INTERNAL_SERVER_ERROR,
+    'User verification failed',
+  );
+
+  const [session] = await db
+    .insert(Sessions)
+    .values({
+      userId: verifiedUser.id,
+      userAgent: dto.userAgent,
+      expiresAt: thirtyDaysFromNow().toISOString(),
+    })
+    .returning({ id: Sessions.id });
+
+  const accessToken = signToken({
+    userId: verifiedUser.id,
+    role: verifiedUser.profile.role,
+    sessionId: session.id,
+  });
+
+  const refreshToken = signToken(
+    {
+      sessionId: session.id,
+      role: verifiedUser.profile.role,
+    },
+    refreshTokenSignOptions,
+  );
+
+  // delete verification code
+  await db.delete(VerificationCodes).where(eq(VerificationCodes.id, dto.verificationCode));
+
+  // return user
+  return {
+    accessToken,
+    refreshToken,
+    verifiedUser,
   };
 };
 
@@ -223,39 +328,6 @@ export const refreshUserAccessToken = async (refreshToken: string) => {
   };
 };
 
-export const verifyEmail = async (code: VerificationCode) => {
-  // get the verification code
-  const validVerificationCode = await db.query.VerificationCodes.findFirst({
-    where: (VerificationCodes, { eq, and, gt }) =>
-      and(
-        eq(VerificationCodes.id, code),
-        eq(VerificationCodes.type, VerificationCodeType.EMAIL_VERIFICATION),
-        gt(VerificationCodes.expiresAt, new Date().toISOString()),
-      ),
-  });
-
-  appAssert(validVerificationCode, NOT_FOUND, 'Invalid OR expired verification code');
-
-  // update user to verified true
-  const updatedUser = await db
-    .update(Users)
-    .set({ verified: true })
-    .where(eq(Users.id, validVerificationCode.userId))
-    .returning({
-      id: Users.id,
-      email: Users.email,
-      verified: Users.verified,
-    });
-
-  appAssert(updatedUser, INTERNAL_SERVER_ERROR, 'User verification failed');
-
-  // delete verification code
-  await db.delete(VerificationCodes).where(eq(VerificationCodes.id, code));
-
-  // return user
-  return updatedUser;
-};
-
 export const sendPasswordResetEmail = async (email: Email) => {
   // get the user by email
   const user = await db.query.Users.findFirst({
@@ -276,7 +348,7 @@ export const sendPasswordResetEmail = async (email: Email) => {
   appAssert(count <= 1, TOO_MANY_REQUESTS, 'Too many requests, please try again later');
 
   // create verification code
-  const expiresAt = oneHourFromNow().toISOString();
+  const expiresAt = fiveMinutesFromNow().toISOString();
   const [verificationCode] = await db
     .insert(VerificationCodes)
     .values({
@@ -286,7 +358,7 @@ export const sendPasswordResetEmail = async (email: Email) => {
     })
     .returning();
   // send verification email
-  const url = `${APP_ORIGIN}/password/reset/
+  const url = `http://localhost:${APP_ORIGIN}/password/reset/
     ${verificationCode.id}&exp=${new Date(expiresAt).getTime()}`;
 
   const { data, error } = await sendMail({
