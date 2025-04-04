@@ -1,8 +1,8 @@
 import { Response, ErrorRequestHandler, NextFunction } from 'express';
-import { BAD_REQUEST, INTERNAL_SERVER_ERROR } from '@src/constants/http.js';
+import { BAD_REQUEST, INTERNAL_SERVER_ERROR } from '../constants/http.js';
 import { z } from 'zod';
-import AppError from '@utils/AppError.js';
-import { clearAuthCookies, REFRESH_PATH } from '@utils/cookies.js';
+import AppError from '../utils/AppError.js';
+import { clearAuthCookies, REFRESH_PATH } from '../utils/cookies.js';
 
 const handleZodError = (res: Response, next: NextFunction, error: z.ZodError) => {
   const errors = error.issues.map((err) => ({
@@ -14,14 +14,14 @@ const handleZodError = (res: Response, next: NextFunction, error: z.ZodError) =>
     errors,
     message: error.message,
   });
-  next(error);
+  next();
 };
 
 const handleAppError = (res: Response, next: NextFunction, error: AppError) => {
   res.status(error.statusCode).json({
     message: error.message,
   });
-  next(error);
+  next();
 };
 
 const errorHandler: ErrorRequestHandler = (error, req, res, next) => {

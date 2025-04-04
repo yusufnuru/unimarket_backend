@@ -1,6 +1,6 @@
 import assert from 'node:assert';
-import { HttpStatusCode } from '@src/constants/http.js';
-import { AppErrorCode } from '@src/constants/appErrorCode.js';
+import { HttpStatusCode } from '../constants/http.js';
+import { AppErrorCode } from '../constants/appErrorCode.js';
 import AppError from './AppError.js';
 
 type AppAssert = (

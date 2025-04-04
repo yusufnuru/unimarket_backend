@@ -1,6 +1,6 @@
-import { connectToDatabase, closeDatabase } from '@config/db.js';
-import { NODE_ENV, PORT } from '@src/constants/env.js';
-import app from '@src/app.js';
+import { connectToDatabase, closeDatabase } from './config/db.js';
+import { NODE_ENV, PORT } from './constants/env.js';
+import app from './app.js';
 
 const server = app.listen(PORT, () => {
   console.log(`[server]: Server is running at http://localhost:${PORT} in ${NODE_ENV} environment`);

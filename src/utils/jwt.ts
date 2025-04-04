@@ -1,6 +1,6 @@
 import jwt, { SignOptions, VerifyOptions } from 'jsonwebtoken';
 import pkg from 'jsonwebtoken';
-import { ACCESS_TOKEN_SECRET, REFRESH_TOKEN_SECRET } from '@src/constants/env.js';
+import { ACCESS_TOKEN_SECRET, REFRESH_TOKEN_SECRET } from '../constants/env.js';
 
 const { JsonWebTokenError } = pkg;
 

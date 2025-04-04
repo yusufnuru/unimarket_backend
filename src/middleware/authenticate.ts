@@ -1,8 +1,8 @@
 import { NextFunction, RequestHandler, Response, Request } from 'express';
-import appAssert from '@utils/appAssert.js';
-import { UNAUTHORIZED } from '@src/constants/http.js';
-import { AppErrorCode } from '@src/constants/appErrorCode.js';
-import { verifyToken } from '@utils/jwt.js';
+import appAssert from '../utils/appAssert.js';
+import { UNAUTHORIZED } from '../constants/http.js';
+import { AppErrorCode } from '../constants/appErrorCode.js';
+import { verifyToken } from '../utils/jwt.js';
 
 interface AuthenticatedRequest extends Request {
   cookies: {
