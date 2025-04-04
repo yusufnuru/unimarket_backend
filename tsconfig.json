@@ -10,27 +10,7 @@
     "outDir": "./dist",
     "noImplicitAny": true, 
     "sourceMap": true,
-    "allowJs": true,
-    "resolveJsonModule": true,
-    "types": ["node", "jest"],
-    "rootDir": "./src",    
-    "baseUrl": ".",
-    "paths": {
-      "@admin/*": ["./src/admin/*"],
-      "@auth/*": ["./src/auth/*"],
-      "@config/*": ["./src/config/*"],
-      "@constants/*": ["./src/constants/*"],
-      "@messaging/*": ["./src/messaging/*"],
-      "@middleware/*": ["./src/middleware/*"],
-      "@schema/*": ["./src/schema/*"],
-      "@buyer/*": ["./src/buyer/*"],
-      "@seller/*": ["./src/seller/*"],
-      "@types/*": ["./src/types/*"],
-      "@user/*": ["./src/user/*"],
-      "@shared/*": ["./src/shared/*"],
-      "@utils/*": ["./src/utils/*"],
-      "@src/*": ["./src/*"] // Catch-all for anything in src
-    }
+    "types": ["node", "vitest/globals"]
   },
   "include": ["src/**/*"], // which files to compile
   "exclude": ["node_modules"], // which files to skip
