@@ -1,6 +1,6 @@
 import { NextFunction, Request, Response } from 'express';
 
-type expressController = (req: Request, res: Response, next: NextFunction) => Promise<void>;
+type expressController = (req: Request, res: Response, next: NextFunction) => Promise<void> | void;
 
 const catchError =
   (controller: expressController): expressController =>
