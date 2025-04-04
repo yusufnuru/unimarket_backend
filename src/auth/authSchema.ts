@@ -15,10 +15,11 @@ export const registerSchema = loginSchema
   .extend({
     firstName: z.string().min(1).max(255),
     lastName: z.string().min(1).max(255),
-    phoneNumber: z.string().regex(phoneRegex),
+    phoneNumber: z.string().regex(phoneRegex, 'Invalid phone number'),
     confirmPassword: z.string().min(6).max(255),
     userAgent: z.string().optional(),
     role: z.enum(['buyer', 'seller']).optional(),
+    verified: z.boolean().optional(),
   })
   .refine((data) => data.password === data.confirmPassword, {
     message: 'Passwords do not match',
@@ -34,8 +35,8 @@ export const resetPasswordSchema = z.object({
   verificationCode: verificationCodeSchema,
 });
 
-export type LoginUserDto = z.infer<typeof loginSchema>;
-export type Email = z.infer<typeof emailSchema>;
-export type Password = z.infer<typeof passwordSchema>;
-export type RegisterUserDto = z.infer<typeof registerSchema>;
-export type EmailVerification = z.infer<typeof verifyEmailSchema>;
+export type loginSchema = z.infer<typeof loginSchema>;
+export type emailSchema = z.infer<typeof emailSchema>;
+export type passwordSchema = z.infer<typeof passwordSchema>;
+export type registerSchema = z.infer<typeof registerSchema>;
+export type verifyEmailSchema = z.infer<typeof verifyEmailSchema>;

@@ -1,32 +1,37 @@
 import { and, eq, gt } from 'drizzle-orm';
-import { db } from '@config/db.js';
-import { Profiles } from '@schema/Profiles.js';
-import { Sessions } from '@schema/Sessions.js';
-import { Users } from '@schema/Users.js';
-import { VerificationCodes } from '@schema/VerificationCodes.js';
-import { compareValue, hashValue } from '@utils/argon2.js';
+import { db } from '../config/db.js';
+import { Profiles } from '../schema/Profiles.js';
+import { Sessions } from '../schema/Sessions.js';
+import { Users } from '../schema/Users.js';
+import { VerificationCodes } from '../schema/VerificationCodes.js';
+import { compareValue, hashValue } from '../utils/argon2.js';
 import {
   CONFLICT,
   INTERNAL_SERVER_ERROR,
   NOT_FOUND,
   TOO_MANY_REQUESTS,
   UNAUTHORIZED,
-} from '@src/constants/http.js';
-import { VerificationCodeType } from '@src/constants/verificationCodeType.js';
-import { APP_ORIGIN } from '@constants/env.js';
-import { fiveMinutesAgo, fiveMinutesFromNow, ONE_DAY_MS, thirtyDaysFromNow } from '@utils/date.js';
-import appAssert from '@utils/appAssert.js';
+} from '../constants/http.js';
+import { VerificationCodeType } from '../constants/verificationCodeType.js';
+import { APP_ORIGIN } from '../constants/env.js';
+import {
+  fiveMinutesAgo,
+  fiveMinutesFromNow,
+  ONE_DAY_MS,
+  thirtyDaysFromNow,
+} from '../utils/date.js';
+import appAssert from '../utils/appAssert.js';
 import {
   RefreshTokenPayload,
   refreshTokenSignOptions,
   signToken,
   verifyToken,
-} from '@utils/jwt.js';
-import { Email, EmailVerification, LoginUserDto, RegisterUserDto } from '@auth/authSchema.js';
-import { getPasswordResetTemplate, getVerifyEmailTemplate } from '@utils/emailTemplate.js';
-import { sendMail } from '@utils/sendMail.js';
+} from '../utils/jwt.js';
+import { emailSchema, verifyEmailSchema, registerSchema, loginSchema } from './authSchema.js';
+import { getPasswordResetTemplate, getVerifyEmailTemplate } from '../utils/emailTemplate.js';
+import { sendMail } from '../utils/sendMail.js';
 
-export const createAccount = async (dto: RegisterUserDto) => {
+export const createAccount = async (dto: registerSchema) => {
   // verify existing user doesn't exist
   const existingUser = await db.query.Users.findFirst({ where: eq(Users.email, dto.email) });
   appAssert(!existingUser, CONFLICT, 'Email already exists');
@@ -39,6 +44,7 @@ export const createAccount = async (dto: RegisterUserDto) => {
       .values({
         email: dto.email,
         password,
+        verified: dto.verified,
       })
       .returning({
         id: Users.id,
@@ -101,7 +107,7 @@ export const createAccount = async (dto: RegisterUserDto) => {
   };
 };
 
-export const loginUser = async (dto: LoginUserDto) => {
+export const loginUser = async (dto: loginSchema) => {
   // GET USER BY EMAIL
   const user = await db.query.Users.findFirst({
     where: eq(Users.email, dto.email),
@@ -180,7 +186,7 @@ export const loginUser = async (dto: LoginUserDto) => {
   };
 };
 
-export const verifyEmailAndLogin = async (dto: EmailVerification) => {
+export const verifyEmailAndLogin = async (dto: verifyEmailSchema) => {
   // get the verification code
   const validVerificationCode = await db.query.VerificationCodes.findFirst({
     where: (VerificationCodes, { eq, and, gt }) =>
@@ -328,7 +334,7 @@ export const refreshUserAccessToken = async (refreshToken: string) => {
   };
 };
 
-export const sendPasswordResetEmail = async (email: Email) => {
+export const sendPasswordResetEmail = async (email: emailSchema) => {
   // get the user by email
   const user = await db.query.Users.findFirst({
     where: (Users, { eq }) => eq(Users.email, email),

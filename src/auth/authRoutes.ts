@@ -8,8 +8,8 @@ import {
   sendPasswordResetHandler,
   resetPasswordResetHandler,
   getMe,
-} from '@auth/authController.js';
-import { authenticate } from '@middleware/authenticate.js';
+} from './authController.js';
+import { authenticate } from '../middleware/authenticate.js';
 
 const authRoutes = Router();
 

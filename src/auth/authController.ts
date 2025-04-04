@@ -1,4 +1,4 @@
-import catchError from '@utils/cacheErrors.js';
+import catchError from '../utils/cacheErrors.js';
 import {
   createAccount,
   deleteSession,
@@ -7,24 +7,24 @@ import {
   resetPassword,
   sendPasswordResetEmail,
   verifyEmailAndLogin,
-} from '@auth/authService.js';
+} from './authService.js';
 import {
   clearAuthCookies,
   getAccessTokenCookieOptions,
   getRefreshTokenCookieOptions,
   setAuthCookies,
-} from '@utils/cookies.js';
+} from '../utils/cookies.js';
 import {
   emailSchema,
   loginSchema,
   registerSchema,
   resetPasswordSchema,
   verifyEmailSchema,
-} from '@auth/authSchema.js';
-import { verifyToken } from '@utils/jwt.js';
-import { CREATED, OK, UNAUTHORIZED } from '@constants/http.js';
-import appAssert from '@utils/appAssert.js';
-import { AppErrorCode } from '@constants/appErrorCode.js';
+} from './authSchema.js';
+import { verifyToken } from '../utils/jwt.js';
+import { CREATED, OK, UNAUTHORIZED } from '../constants/http.js';
+import appAssert from '../utils/appAssert.js';
+import { AppErrorCode } from '../constants/appErrorCode.js';
 
 export const registerHandler = catchError(async (req, res) => {
   const request = registerSchema.parse({
@@ -130,7 +130,7 @@ export const resetPasswordResetHandler = catchError(async (req, res) => {
   });
 });
 
-export const getMe = catchError(async (req, res, next) => {
+export const getMe = catchError((req, res, next) => {
   res.json({
     userId: req.userId,
     role: req.role, // Ensure this is correctly sent
