@@ -1,6 +1,6 @@
 import { pgTable, uuid, timestamp, varchar } from 'drizzle-orm/pg-core';
 import { Users } from './Users.js';
-import { thirtyDaysFromNow } from '@utils/date.js';
+import { thirtyDaysFromNow } from '../utils/date.js';
 import { relations } from 'drizzle-orm';
 export const Sessions = pgTable('sessions', {
   id: uuid('id').primaryKey().defaultRandom(),

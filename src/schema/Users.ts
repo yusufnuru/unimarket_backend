@@ -1,6 +1,8 @@
 import { relations, sql } from 'drizzle-orm';
 import { pgTable, varchar, uuid, timestamp, boolean } from 'drizzle-orm/pg-core';
 import { Profiles } from './Profiles.js';
+import { VerificationCodes } from './VerificationCodes.js';
+import { Sessions } from './Sessions.js';
 
 export const Users = pgTable('users', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -14,7 +16,10 @@ export const Users = pgTable('users', {
     .$onUpdate(() => sql`now()`),
 });
 
-export const usersRelation = relations(Users, ({ one }) => ({
+export const usersRelation = relations(Users, ({ one, many }) => ({
+  verificationCodes: many(VerificationCodes),
+  sessions: many(Sessions),
+
   profile: one(Profiles, {
     fields: [Users.id],
     references: [Profiles.userId],
