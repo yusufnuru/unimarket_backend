@@ -16,7 +16,7 @@ export const Stores = pgTable('stores', {
     .notNull()
     .references(() => Profiles.id, { onDelete: 'cascade' })
     .unique(),
-  storeName: varchar('store_name', { length: 100 }).notNull(),
+  storeName: varchar('store_name', { length: 100 }).notNull().unique(),
   description: varchar('description', { length: 500 }),
   storeAddress: varchar('store_address', { length: 500 }).notNull(),
   storeStatus: storeStatusEnum('store_status').default('incomplete').notNull(),
