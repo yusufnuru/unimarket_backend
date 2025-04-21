@@ -2,17 +2,19 @@ import { db } from '../config/db.js';
 import { and, asc, desc, eq, ilike } from 'drizzle-orm';
 import { Profiles } from '../schema/Profiles.js';
 import appAssert from '../utils/appAssert.js';
-import { CONFLICT, FORBIDDEN, NOT_FOUND } from '../constants/http.js';
+import { BAD_REQUEST, CONFLICT, FORBIDDEN, NOT_FOUND } from '../constants/http.js';
 import { Stores } from '../schema/Stores.js';
 import { StoreRequests } from '../schema/StoreRequest.js';
 import {
   createStoreSchema,
   storeQuerySchema,
   updateStoreSchema,
-  storeParamSchema,
+  storeParamSchema, createProductSchema,
 } from './storeSchema.js';
-import { Products } from '../schema/Products.js';
-import { deleteFolder } from '../utils/s3Utils.js';
+import { ProductImages, Products } from '../schema/Products.js';
+import { checkFolderExists, deleteFolder, getObjectSignedUrl, uploadFile } from '../utils/s3Utils.js';
+import sanitize from 'sanitize-filename';
+import { imageFileBuffer } from '../utils/imageFile.js';
 
 /**
  * Helper function to get authorized seller and their store
@@ -241,5 +243,109 @@ export const deleteSellerStore = async (storeId: storeParamSchema, userId: strin
     appAssert(deletedStore, NOT_FOUND, 'Store not found');
 
     return { deletedStore, deletedImageFolders };
+  });
+};
+
+
+export const createProduct = async (
+  userId: string,
+  storeId: storeParamSchema,
+  productDto: createProductSchema,
+  imageFiles: Express.Multer.File[],
+) => {
+  return await db.transaction(async (tx) => {
+    const { store } = await getAuthorizedSellerAndStore(tx, userId, storeId);
+
+    appAssert(store.storeStatus === 'active', FORBIDDEN, 'Store is not active');
+
+    const [newProduct] = await tx
+      .insert(Products)
+      .values({
+        storeId: store.id,
+        productName: productDto.name,
+        description: productDto.description,
+        price: productDto.price,
+        quantity: productDto.quantity,
+      })
+      .returning();
+
+    const uploadImages = async (): Promise<string[]> => {
+      const filePath = `products/${newProduct.id}/images`;
+      const folderExist = await checkFolderExists(filePath);
+
+      appAssert(!folderExist, CONFLICT, 'Product already exists');
+      try {
+        const uploadPromises = imageFiles.map(async (file, index) => {
+          const imageName = `${newProduct.id}-img-${index + 1}-${sanitize(file.originalname)}`;
+          const buffer = await imageFileBuffer(file.buffer);
+          const fullPath = `${filePath}/${imageName}`;
+
+          await uploadFile(buffer, imageName, file.mimetype, filePath);
+
+          return `${fullPath}`;
+        });
+        return await Promise.all(uploadPromises);
+      } catch (error) {
+        console.error('Error uploading file', error);
+        await deleteFolder(filePath);
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        appAssert(false, BAD_REQUEST, `Failed to upload file: ${errorMessage}`);
+      }
+    };
+
+    const uploadedImages = await uploadImages();
+    appAssert(uploadedImages.length > 0, NOT_FOUND, 'Uploaded images not found');
+
+    const images = await tx
+      .insert(ProductImages)
+      .values(
+        uploadedImages.map((file: string) => ({
+          productId: newProduct.id,
+          imageUrl: file,
+        })),
+      )
+      .returning();
+
+    return {
+      newProduct: {
+        newProduct,
+        images,
+      },
+    };
+  });
+};
+
+export const listSellerProducts = async (storeId: storeParamSchema, userId: string) => {
+  return await db.transaction(async (tx) => {
+    const { store } = await getAuthorizedSellerAndStore(tx, userId, storeId);
+
+    const products = await tx.query.Products.findMany({
+      where: eq(Products.storeId, store.id),
+      with: {
+        images: {
+          columns: {
+            id: true,
+            imageUrl: true,
+          },
+        },
+      },
+    });
+
+    appAssert(products.length > 0, NOT_FOUND, 'Products not found');
+
+    const productWithImages = await Promise.all(
+      products.map(async (product) => {
+        return {
+          ...product,
+          images: await Promise.all(
+            product.images.map(async (image) => ({
+              id: image.id,
+              imageUrl: await getObjectSignedUrl(image.imageUrl),
+            })),
+          ),
+        };
+      }),
+    );
+    return { products: productWithImages };
   });
 };
