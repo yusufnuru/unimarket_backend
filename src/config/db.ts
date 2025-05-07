@@ -6,6 +6,9 @@ import * as sessionsSchema from '../schema/Sessions.js';
 import * as verificationCodesSchema from '../schema/VerificationCodes.js';
 import * as storeSchema from '../schema/Stores.js';
 import * as storeRequestSchema from '../schema/StoreRequest.js';
+import * as productsSchema from '../schema/Products.js';
+import * as categoriesSchema from '../schema/Categories.js';
+import * as chatMessageSchema from '../schema/ChatMessages.js';
 import { DB_URL } from '../constants/env.js';
 
 const { Pool } = pkg;
@@ -21,6 +24,9 @@ export const db = drizzle(pool, {
     ...verificationCodesSchema,
     ...storeSchema,
     ...storeRequestSchema,
+    ...productsSchema,
+    ...categoriesSchema,
+    ...chatMessageSchema,
   },
 });
 
