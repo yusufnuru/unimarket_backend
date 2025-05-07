@@ -2,6 +2,7 @@ import { pgEnum, pgTable, timestamp, uuid, varchar } from 'drizzle-orm/pg-core';
 import { Profiles } from './Profiles.js';
 import { relations, sql } from 'drizzle-orm';
 import { StoreRequests } from './StoreRequest.js';
+import { Products } from './Products.js';
 
 export const storeStatusEnum = pgEnum('store_statuses', [
   'incomplete',
@@ -27,14 +28,12 @@ export const Stores = pgTable('stores', {
     .$onUpdate(() => sql`now()`),
 });
 
-export const storeRelation = relations(Stores, ({ one }) => ({
+export const storeRelation = relations(Stores, ({ one, many }) => ({
+  products: many(Products),
+  requests: many(StoreRequests),
+
   owner: one(Profiles, {
     fields: [Stores.ownerId],
     references: [Profiles.id],
-  }),
-
-  request: one(StoreRequests, {
-    fields: [Stores.id],
-    references: [StoreRequests.storeId],
   }),
 }));
