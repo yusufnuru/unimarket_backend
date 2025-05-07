@@ -1,5 +1,5 @@
 import { db } from '../config/db.js';
-import { and, asc, desc, eq, ilike } from 'drizzle-orm';
+import { and, asc, desc, eq, ilike, inArray } from 'drizzle-orm';
 import { Profiles } from '../schema/Profiles.js';
 import appAssert from '../utils/appAssert.js';
 import { BAD_REQUEST, CONFLICT, FORBIDDEN, NOT_FOUND } from '../constants/http.js';
@@ -9,12 +9,23 @@ import {
   createStoreSchema,
   storeQuerySchema,
   updateStoreSchema,
-  storeParamSchema, createProductSchema,
+  createProductSchema,
+  updateProductSchema,
+  createStoreRequestSchema,
 } from './storeSchema.js';
+import { productParamSchema } from '../types/global.js';
 import { ProductImages, Products } from '../schema/Products.js';
-import { checkFolderExists, deleteFolder, getObjectSignedUrl, uploadFile } from '../utils/s3Utils.js';
+import {
+  checkFolderExists,
+  deleteFile,
+  deleteFolder,
+  getObjectSignedUrl,
+  uploadFile,
+} from '../utils/s3Utils.js';
 import sanitize from 'sanitize-filename';
 import { imageFileBuffer } from '../utils/imageFile.js';
+import { Categories } from '../schema/Categories.js';
+import { TransactionType, storeParamSchema } from '../types/global.js';
 
 /**
  * Helper function to get authorized seller and their store
@@ -23,8 +34,6 @@ import { imageFileBuffer } from '../utils/imageFile.js';
  * @param storeId - Optional store ID to verify ownership
  * @returns Object containing seller and store
  */
-
-type TransactionType = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
 async function getAuthorizedSellerAndStore(
   tx: TransactionType,
@@ -154,14 +163,47 @@ export const createStore = async (storeDto: createStoreSchema, userId: string) =
       })
       .returning();
 
-    await tx
+    appAssert(newStore, NOT_FOUND, 'Store creation failed');
+
+    const [newRequest] = await tx
       .insert(StoreRequests)
       .values({
+        requestMessage: storeDto.requestMessage,
         storeId: newStore.id,
       })
       .returning();
 
+    appAssert(newRequest, NOT_FOUND, 'Store Request creation failed');
+
     return { newStore };
+  });
+};
+
+export const createRequest = async (
+  userId: string,
+  storeId: storeParamSchema,
+  request: createStoreRequestSchema,
+) => {
+  return await db.transaction(async (tx) => {
+    const { store } = await getAuthorizedSellerAndStore(tx, userId, storeId);
+
+    const existingRequest = await tx.query.StoreRequests.findFirst({
+      where: and(eq(StoreRequests.storeId, store.id), eq(StoreRequests.requestStatus, 'pending')),
+    });
+
+    appAssert(!existingRequest, CONFLICT, 'Request already exists');
+
+    const [newRequest] = await tx
+      .insert(StoreRequests)
+      .values({
+        requestMessage: request.requestMessage,
+        storeId: store.id,
+      })
+      .returning();
+
+    appAssert(newRequest, NOT_FOUND, 'Request creation failed');
+
+    return { store, newRequest };
   });
 };
 
@@ -246,7 +288,6 @@ export const deleteSellerStore = async (storeId: storeParamSchema, userId: strin
   });
 };
 
-
 export const createProduct = async (
   userId: string,
   storeId: storeParamSchema,
@@ -258,6 +299,12 @@ export const createProduct = async (
 
     appAssert(store.storeStatus === 'active', FORBIDDEN, 'Store is not active');
 
+    const categoryExists = await tx.query.Categories.findFirst({
+      where: eq(Categories.id, productDto.category),
+    });
+
+    appAssert(categoryExists, NOT_FOUND, 'Category not found');
+
     const [newProduct] = await tx
       .insert(Products)
       .values({
@@ -265,6 +312,7 @@ export const createProduct = async (
         productName: productDto.name,
         description: productDto.description,
         price: productDto.price,
+        categoryId: productDto.category,
         quantity: productDto.quantity,
       })
       .returning();
@@ -275,8 +323,8 @@ export const createProduct = async (
 
       appAssert(!folderExist, CONFLICT, 'Product already exists');
       try {
-        const uploadPromises = imageFiles.map(async (file, index) => {
-          const imageName = `${newProduct.id}-img-${index + 1}-${sanitize(file.originalname)}`;
+        const uploadPromises = imageFiles.map(async (file) => {
+          const imageName = `${newProduct.id}-img-${Date.now()}-${sanitize(file.originalname)}`;
           const buffer = await imageFileBuffer(file.buffer);
           const fullPath = `${filePath}/${imageName}`;
 
@@ -322,6 +370,12 @@ export const listSellerProducts = async (storeId: storeParamSchema, userId: stri
     const products = await tx.query.Products.findMany({
       where: eq(Products.storeId, store.id),
       with: {
+        category: {
+          columns: {
+            id: true,
+            name: true,
+          },
+        },
         images: {
           columns: {
             id: true,
@@ -333,7 +387,7 @@ export const listSellerProducts = async (storeId: storeParamSchema, userId: stri
 
     appAssert(products.length > 0, NOT_FOUND, 'Products not found');
 
-    const productWithImages = await Promise.all(
+    const productsWithImages = await Promise.all(
       products.map(async (product) => {
         return {
           ...product,
@@ -346,6 +400,159 @@ export const listSellerProducts = async (storeId: storeParamSchema, userId: stri
         };
       }),
     );
-    return { products: productWithImages };
+
+    appAssert(productsWithImages.length > 0, NOT_FOUND, 'Products not found');
+
+    return { products: productsWithImages };
+  });
+};
+
+export const getSellerProduct = async (
+  userId: string,
+  storeId: storeParamSchema,
+  productId: productParamSchema,
+) => {
+  return await db.transaction(async (tx) => {
+    const { store } = await getAuthorizedSellerAndStore(tx, userId, storeId);
+
+    const product = await tx.query.Products.findFirst({
+      where: and(eq(Products.id, productId), eq(Products.storeId, store.id)),
+      with: {
+        category: {
+          columns: {
+            id: true,
+            name: true,
+          },
+        },
+        images: {
+          columns: {
+            id: true,
+            imageUrl: true,
+          },
+        },
+      },
+    });
+
+    appAssert(product, NOT_FOUND, 'Product not found');
+
+    const productWithImages = {
+      ...product,
+      images: await Promise.all(
+        product.images.map(async (image) => ({
+          id: image.id,
+          imageUrl: await getObjectSignedUrl(image.imageUrl),
+        })),
+      ),
+    };
+
+    appAssert(productWithImages, NOT_FOUND, 'Product not found');
+
+    return { product: productWithImages };
+  });
+};
+
+export const updateProduct = async (
+  userId: string,
+  storeId: storeParamSchema,
+  productId: productParamSchema,
+  productDto: updateProductSchema,
+  imageFiles: Express.Multer.File[],
+) => {
+  return await db.transaction(async (tx) => {
+    const { store } = await getAuthorizedSellerAndStore(tx, userId, storeId);
+    const [updatedProduct] = await tx
+      .update(Products)
+      .set({
+        productName: productDto.name,
+        description: productDto.description,
+        price: productDto.price as number,
+        categoryId: productDto.category,
+        quantity: productDto.quantity as number,
+      })
+      .where(and(eq(Products.id, productId), eq(Products.storeId, store.id)))
+      .returning();
+
+    appAssert(updatedProduct, NOT_FOUND, 'Product not found');
+
+    const filePath = `products/${updatedProduct.id}/images`;
+
+    const deletedImagePaths: string[] = [];
+    const uploadedImagePaths: string[] = [];
+
+    if (productDto.imagesToRemove && productDto.imagesToRemove?.length > 0) {
+      console.log(productDto.imagesToRemove);
+      const imagesToDelete = await tx.query.ProductImages.findMany({
+        where: and(
+          eq(ProductImages.productId, updatedProduct.id),
+          inArray(ProductImages.imageUrl, productDto.imagesToRemove),
+        ),
+      });
+      appAssert(imagesToDelete.length > 0, NOT_FOUND, 'Images not found');
+
+      for (const image of imagesToDelete) {
+        await deleteFile(image.imageUrl);
+        deletedImagePaths.push(image.imageUrl);
+      }
+
+      const deletedImages = await tx
+        .delete(ProductImages)
+        .where(
+          and(
+            eq(ProductImages.productId, updatedProduct.id),
+            inArray(ProductImages.imageUrl, productDto.imagesToRemove),
+          ),
+        )
+        .returning();
+
+      appAssert(deletedImages.length > 0, NOT_FOUND, 'Image not found');
+    }
+
+    if (imageFiles.length > 0) {
+      for (const file of imageFiles) {
+        const imageName = `${updatedProduct.id}-img-${Date.now()}-${sanitize(file.originalname)}`;
+        const buffer = await imageFileBuffer(file.buffer);
+        const fullPath = `${filePath}/${imageName}`;
+
+        await uploadFile(buffer, imageName, file.mimetype, filePath);
+        uploadedImagePaths.push(fullPath);
+      }
+
+      appAssert(uploadedImagePaths.length > 0, BAD_REQUEST, 'Image upload failed');
+
+      const uploadImages = await tx
+        .insert(ProductImages)
+        .values(
+          uploadedImagePaths.map((url) => ({
+            productId: updatedProduct.id,
+            imageUrl: url,
+          })),
+        )
+        .returning();
+      appAssert(uploadImages.length > 0, NOT_FOUND, 'Image upload failed');
+    }
+    return { updatedProduct, uploadedImagePaths, deletedImagePaths };
+  });
+};
+
+export const deleteSellerProduct = async (
+  userId: string,
+  storeId: storeParamSchema,
+  productId: productParamSchema,
+) => {
+  return await db.transaction(async (tx) => {
+    const { store } = await getAuthorizedSellerAndStore(tx, userId, storeId);
+
+    const [deletedProduct] = await tx
+      .delete(Products)
+      .where(and(eq(Products.id, productId), eq(Products.storeId, store.id)))
+      .returning();
+
+    appAssert(deletedProduct, NOT_FOUND, 'Product not found');
+    const folderPath = `products/${deletedProduct.id}`;
+    const folderExist = await checkFolderExists(folderPath);
+    appAssert(folderExist, NOT_FOUND, 'Product folder not found');
+    await deleteFolder(folderPath);
+
+    return { deletedProduct, deletedFolderPath: folderPath };
   });
 };

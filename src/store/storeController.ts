@@ -2,12 +2,15 @@ import catchError from '../utils/cacheErrors.js';
 import { BAD_REQUEST, CREATED, OK } from '../constants/http.js';
 import {
   createStoreSchema,
-  storeParamSchema,
   updateStoreSchema,
   createProductSchema,
   addImageSchema,
   storeQuerySchema,
+  updateProductSchema,
+  updateImageSchema,
+  createStoreRequestSchema,
 } from './storeSchema.js';
+import { productParamSchema } from '../types/global.js';
 import {
   createProduct,
   createStore,
@@ -17,8 +20,13 @@ import {
   listStores,
   updateStore,
   listSellerProducts,
+  getSellerProduct,
+  updateProduct,
+  deleteSellerProduct,
+  createRequest,
 } from './storeService.js';
 import appAssert from '../utils/appAssert.js';
+import { storeParamSchema } from '../types/global.js';
 
 export const listStoresHandler = catchError(async (req, res) => {
   const request = storeQuerySchema.parse(req.query);
@@ -61,6 +69,22 @@ export const registerStoreHandler = catchError(async (req, res) => {
   });
 });
 
+export const createRequestHandler = catchError(async (req, res) => {
+  // validate request
+  const { userId } = req;
+  const storeId = storeParamSchema.parse(req.params.id);
+  const request = createStoreRequestSchema.parse(req.body);
+  // call service
+  const { store, newRequest } = await createRequest(userId, storeId, request);
+
+  // return response
+  res.status(OK).json({
+    message: 'Store request created successfully',
+    store,
+    request: newRequest,
+  });
+});
+
 export const updateStoreHandler = catchError(async (req, res) => {
   // validate request
   const { userId } = req;
@@ -98,13 +122,13 @@ export const deleteSellerStoreHandler = catchError(async (req, res) => {
   const storeId = storeParamSchema.parse(req.params.id);
 
   // call service
-  const { deletedStore,deletedImageFolders } = await deleteSellerStore(storeId, userId);
+  const { deletedStore, deletedImageFolders } = await deleteSellerStore(storeId, userId);
 
   // return response
   res.status(OK).json({
     message: 'Store deleted successfully',
     store: deletedStore,
-    deletedProduct: deletedImageFolders,
+    ...deletedImageFolders,
   });
 });
 
@@ -141,20 +165,58 @@ export const listSellerProductsHandler = catchError(async (req, res) => {
   });
 });
 
-// export const getProductHandler = catchError(async (req, res) => {
-//   // validate request
-//   const { userId } = req;
-//   const storeId = storeParamSchema.parse(req.params.id);
-//   const productId = storeParamSchema.parse(req.params.productId);
-//
-//   // call service
-//   const { product } = await getSellerProduct(productId, storeId, userId);
-//
-//   // return response
-//   res.status(OK).json({
-//     message: 'Product fetched successfully',
-//     product,
-//   });
-// });
-// export const updateProductHandler = catchError(async (req, res) => {})
-// export const deleteProductHandler = catchError(async (req, res) => {})
+export const getSellerProductHandler = catchError(async (req, res) => {
+  // validate request
+  const { userId } = req;
+  const storeId = storeParamSchema.parse(req.params.id);
+  const productId = storeParamSchema.parse(req.params.productId);
+
+  // call service
+  const { product } = await getSellerProduct(userId, storeId, productId);
+
+  // return response
+  res.status(OK).json({
+    message: 'Product fetched successfully',
+    product,
+  });
+});
+
+export const updateProductHandler = catchError(async (req, res) => {
+  // validate request
+  const { userId } = req;
+  const storeId = storeParamSchema.parse(req.params.id);
+  const productId = productParamSchema.parse(req.params.productId);
+  const request = updateProductSchema.parse(req.body);
+  const imageFiles = (await updateImageSchema.parseAsync(req.files)) as Express.Multer.File[];
+
+  // call service
+  const { updatedProduct, deletedImagePaths, uploadedImagePaths } = await updateProduct(
+    userId,
+    storeId,
+    productId,
+    request,
+    imageFiles,
+  );
+
+  // return response
+  res.status(OK).json({
+    message: 'Product updated successfully',
+    product: updatedProduct,
+    deleted: deletedImagePaths,
+    added: uploadedImagePaths,
+  });
+});
+export const deleteSellerProductHandler = catchError(async (req, res) => {
+  //validate request
+  const { userId } = req;
+  const storeId = storeParamSchema.parse(req.params.id);
+  const productId = productParamSchema.parse(req.params.productId);
+
+  const { deletedProduct } = await deleteSellerProduct(userId, storeId, productId);
+
+  // return response
+  res.status(OK).json({
+    message: 'Product deleted successfully',
+    product: deletedProduct,
+  });
+});

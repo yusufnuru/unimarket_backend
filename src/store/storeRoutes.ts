@@ -2,12 +2,16 @@ import { Router } from 'express';
 import { authorizeRole } from '../middleware/authenticate.js';
 import {
   createProductHandler,
+  createRequestHandler,
+  deleteSellerProductHandler,
   deleteSellerStoreHandler,
+  getSellerProductHandler,
   getSellerStoreHandler,
   getStoreHandler,
   listSellerProductsHandler,
   listStoresHandler,
   registerStoreHandler,
+  updateProductHandler,
   updateStoreHandler,
 } from './storeController.js';
 import { uploadMultipleImages } from '../middleware/multer.js';
@@ -22,8 +26,17 @@ publicStoreRoutes.get('/:id', getStoreHandler);
 
 //seller routes
 storeRoutes.post('/create', authorizeSeller, registerStoreHandler);
+storeRoutes.post('/:id/request', authorizeSeller, createRequestHandler);
 storeRoutes.patch('/:id/seller', authorizeSeller, updateStoreHandler);
 storeRoutes.get('/:id/seller', authorizeSeller, getSellerStoreHandler);
 storeRoutes.delete('/:id/seller', authorizeSeller, deleteSellerStoreHandler);
 storeRoutes.post('/:id/products', authorizeSeller, uploadMultipleImages(), createProductHandler);
 storeRoutes.get('/:id/products', authorizeSeller, listSellerProductsHandler);
+storeRoutes.get('/:id/products/:productId', authorizeSeller, getSellerProductHandler);
+storeRoutes.patch(
+  '/:id/products/:productId',
+  authorizeSeller,
+  uploadMultipleImages(),
+  updateProductHandler,
+);
+storeRoutes.delete('/:id/products/:productId', authorizeSeller, deleteSellerProductHandler);
