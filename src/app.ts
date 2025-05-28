@@ -5,19 +5,40 @@ import errorHandler from './middleware/errorHandler.js';
 import authRoutes from './auth/authRoutes.js';
 import { authenticate, authorizeRole } from './middleware/authenticate.js';
 import { userRoutes, sessionRoutes } from './shared/sharedRoutes.js';
-import storeRoutes from './store/storeRoutes.js';
+import { storeRoutes, publicStoreRoutes } from './store/storeRoutes.js';
+import adminRoutes from './admin/adminRoutes.js';
+import { productRoutes, publicProductRoutes } from './product/productRoutes.js';
+import { createServer } from 'http';
+import { Server } from 'socket.io';
+import { closeDatabase, connectToDatabase } from './config/db.js';
+import { PORT, NODE_ENV } from './constants/env.js';
+import chatRouter from './chat/chatRoutes.js';
+import { publicCategoryRouter } from './category/categoryRoutes.js';
+import { setUpMessageHandler } from './chat/chatMessageSocketHandler.js';
+import buyerRoutes from './buyer/buyerRoutes.js';
 
 const app = express();
+const server = createServer(void app);
+const io = new Server(server, {
+  cors: {
+    origin: ['http://localhost:3000', 'http://localhost:3001'],
+    credentials: true,
+  },
+});
 
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.set('io', io);
+// socketSetupIO(io);
+setUpMessageHandler(io);
+
 app.use(
   cors({
-    origin: 'http://localhost:3000',
+    origin: ['http://localhost:3000', 'http://localhost:3001'],
     credentials: true,
   }),
 );
 app.use(cookieParser());
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
 // Routes
 // auth routes
@@ -26,7 +47,16 @@ app.use('/api/auth', authRoutes);
 // protected routes
 app.use('/api/user', authenticate, authorizeRole(['admin', 'seller', 'buyer']), userRoutes);
 app.use('/api/sessions', authenticate, authorizeRole(['admin', 'seller', 'buyer']), sessionRoutes);
+app.use('/api/chat', authenticate, authorizeRole(['admin', 'seller', 'buyer']), chatRouter);
+app.use('/api/admin', authenticate, authorizeRole(['admin']), adminRoutes);
+app.use('/api/buyer', authenticate, authorizeRole(['buyer']), buyerRoutes);
 app.use('/api/store', authenticate, storeRoutes);
+app.use('/api/product', authenticate, productRoutes);
+
+// public routes
+app.use('/api/public-store', publicStoreRoutes);
+app.use('/api/public-product', publicProductRoutes);
+app.use('/api/public-category', publicCategoryRouter);
 
 app.use((req, res, next) => {
   console.log('Request URL:', req.url);
@@ -38,4 +68,45 @@ app.use((req, res, next) => {
 });
 app.use(errorHandler);
 
-export default app;
+server.listen(Number(PORT), '0.0.0.0', () => {
+  console.log(`[server]: Server is running at http://localhost:${PORT} in ${NODE_ENV} environment`);
+
+  connectToDatabase()
+    .then(() => {
+      console.log('Database connection successful');
+    })
+    .catch((err) => {
+      console.error('Failed to connect to database:', err);
+      process.exit(1);
+    });
+});
+
+function shutdown() {
+  console.log('Shutting down server...');
+  void io.close(() => {
+    console.log('WebSocket connections closed');
+    server.close(() => {
+      closeDatabase()
+        .then(() => {
+          console.log('Server shut down complete');
+          process.exit(0);
+        })
+        .catch((err) => {
+          console.error('Error closing database connection:', err);
+          process.exit(1);
+        });
+    });
+  });
+  setTimeout(() => {
+    console.error('Forced shutdown after timeout');
+    process.exit(1);
+  }, 10000);
+}
+
+process.on('SIGINT', () => {
+  shutdown();
+});
+
+process.on('SIGTERM', () => {
+  shutdown();
+});
