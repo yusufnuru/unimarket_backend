@@ -35,7 +35,10 @@ export const registerHandler = catchError(async (req, res) => {
   const { ...user } = await createAccount(request);
 
   // return response
-  res.status(CREATED).json({ user });
+  res.status(CREATED).json({
+    user,
+    message: 'Account registered successfully. Verification link has been sent to your email',
+  });
 });
 
 export const loginHandler = catchError(async (req, res) => {

@@ -2,7 +2,10 @@ import { z } from 'zod';
 
 export const emailSchema = z.string().email().min(3).max(255);
 export const passwordSchema = z.string().min(6).max(255);
-export const verificationCodeSchema = z.string().min(36);
+export const verificationCodeSchema = z
+  .string()
+  .uuid('Invalid verification code')
+  .nonempty('Verification code is required');
 const phoneRegex = new RegExp(/^([+]?[\s0-9]+)?(\d{3}|[(]?[0-9]+[)])?([-]?[\s]?[0-9])+$/);
 
 export const loginSchema = z.object({
@@ -35,8 +38,8 @@ export const resetPasswordSchema = z.object({
   verificationCode: verificationCodeSchema,
 });
 
-export type loginSchema = z.infer<typeof loginSchema>;
-export type emailSchema = z.infer<typeof emailSchema>;
-export type passwordSchema = z.infer<typeof passwordSchema>;
-export type registerSchema = z.infer<typeof registerSchema>;
-export type verifyEmailSchema = z.infer<typeof verifyEmailSchema>;
+export type LoginSchema = z.infer<typeof loginSchema>;
+export type EmailSchema = z.infer<typeof emailSchema>;
+export type PasswordSchema = z.infer<typeof passwordSchema>;
+export type RegisterSchema = z.infer<typeof registerSchema>;
+export type VerifyEmailSchema = z.infer<typeof verifyEmailSchema>;

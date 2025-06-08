@@ -27,11 +27,11 @@ import {
   signToken,
   verifyToken,
 } from '../utils/jwt.js';
-import { emailSchema, verifyEmailSchema, registerSchema, loginSchema } from './authSchema.js';
+import { EmailSchema, LoginSchema, RegisterSchema, VerifyEmailSchema } from './authSchema.js';
 import { getPasswordResetTemplate, getVerifyEmailTemplate } from '../utils/emailTemplate.js';
 import { sendMail } from '../utils/sendMail.js';
 
-export const createAccount = async (dto: registerSchema) => {
+export const createAccount = async (dto: RegisterSchema) => {
   // verify existing user doesn't exist
   const existingUser = await db.query.Users.findFirst({ where: eq(Users.email, dto.email) });
   appAssert(!existingUser, CONFLICT, 'Email already exists');
@@ -90,7 +90,8 @@ export const createAccount = async (dto: registerSchema) => {
     })
     .returning();
 
-  const url = `http://localhost:${APP_ORIGIN}/email/verify/${verificationCode.id}`;
+  // eslint-disable-next-line @stylistic/max-len
+  const url = `http://localhost:${APP_ORIGIN}/email-verify/${verificationCode.id}&exp=${new Date(expiresAt).getTime()}`;
 
   // send verification code
   const { data, error } = await sendMail({
@@ -107,7 +108,7 @@ export const createAccount = async (dto: registerSchema) => {
   };
 };
 
-export const loginUser = async (dto: loginSchema) => {
+export const loginUser = async (dto: LoginSchema) => {
   // GET USER BY EMAIL
   const user = await db.query.Users.findFirst({
     where: eq(Users.email, dto.email),
@@ -144,7 +145,10 @@ export const loginUser = async (dto: loginSchema) => {
       })
       .returning();
 
-    const url = `http://localhost:${APP_ORIGIN}/email/verify/${verificationCode.id}`;
+    appAssert(verificationCode, NOT_FOUND, 'Failed to create verification code');
+
+    // eslint-disable-next-line @stylistic/max-len
+    const url = `http://localhost:${APP_ORIGIN}/email/verify/${verificationCode.id}&exp=${new Date(expiresAt).getTime()}`;
 
     // send verification code
     const { data, error } = await sendMail({
@@ -186,7 +190,7 @@ export const loginUser = async (dto: loginSchema) => {
   };
 };
 
-export const verifyEmailAndLogin = async (dto: verifyEmailSchema) => {
+export const verifyEmailAndLogin = async (dto: VerifyEmailSchema) => {
   // get the verification code
   const validVerificationCode = await db.query.VerificationCodes.findFirst({
     where: (VerificationCodes, { eq, and, gt }) =>
@@ -197,7 +201,6 @@ export const verifyEmailAndLogin = async (dto: verifyEmailSchema) => {
       ),
   });
 
-  console.log(validVerificationCode);
   appAssert(validVerificationCode, NOT_FOUND, 'Invalid OR expired verification code');
 
   // update user to verified true
@@ -210,7 +213,7 @@ export const verifyEmailAndLogin = async (dto: verifyEmailSchema) => {
       email: Users.email,
       verified: Users.verified,
     });
-  console.log(updatedUser);
+
   appAssert(updatedUser, INTERNAL_SERVER_ERROR, 'User verification failed');
 
   const verifiedUser = await db.query.Users.findFirst({
@@ -334,7 +337,7 @@ export const refreshUserAccessToken = async (refreshToken: string) => {
   };
 };
 
-export const sendPasswordResetEmail = async (email: emailSchema) => {
+export const sendPasswordResetEmail = async (email: EmailSchema) => {
   // get the user by email
   const user = await db.query.Users.findFirst({
     where: (Users, { eq }) => eq(Users.email, email),
@@ -363,9 +366,11 @@ export const sendPasswordResetEmail = async (email: emailSchema) => {
       expiresAt,
     })
     .returning();
-  // send verification email
-  const url = `http://localhost:${APP_ORIGIN}/password/reset/
-    ${verificationCode.id}&exp=${new Date(expiresAt).getTime()}`;
+
+  appAssert(verificationCode, NOT_FOUND, 'Failed to create verification code');
+
+  // eslint-disable-next-line @stylistic/max-len
+  const url = `http://localhost:${APP_ORIGIN}/password-reset/${verificationCode.id}&exp=${new Date(expiresAt).getTime()}`;
 
   const { data, error } = await sendMail({
     to: user.email,
