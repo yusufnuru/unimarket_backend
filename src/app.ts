@@ -21,7 +21,7 @@ const app = express();
 const server = createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: [`${APP_ORIGIN}`],
+    origin: [`${APP_ORIGIN}`, 'http://localhost:3000'],
     credentials: true,
   },
 });
