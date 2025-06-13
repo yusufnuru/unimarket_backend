@@ -32,7 +32,7 @@ setUpMessageHandler(io);
 
 app.use(
   cors({
-    origin: [`${APP_ORIGIN}`],
+    origin: [`${APP_ORIGIN}`, 'http://localhost:3000'],
     credentials: true,
   }),
 );
