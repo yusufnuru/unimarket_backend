@@ -8,7 +8,8 @@ type Params = {
   html: string;
 };
 
-const getFromEmail = () => (NODE_ENV === 'development' ? 'onboarding@resend.dev' : 'yusuf');
+const getFromEmail = () =>
+  NODE_ENV === 'development' ? 'onboarding@resend.dev' : 'onboarding@resend.dev';
 
 const getToEmail = (to: string) => (NODE_ENV === 'development' ? 'delivered@resend.dev' : to);
 export const sendMail = async ({ to, subject, text, html }: Params) =>
