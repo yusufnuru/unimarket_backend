@@ -91,7 +91,7 @@ export const createAccount = async (dto: RegisterSchema) => {
     .returning();
 
   // eslint-disable-next-line @stylistic/max-len
-  const url = `http://localhost:${APP_ORIGIN}/email-verify/${verificationCode.id}&exp=${new Date(expiresAt).getTime()}`;
+  const url = `${APP_ORIGIN}/email-verify/${verificationCode.id}?exp=${new Date(expiresAt).getTime()}`;
 
   // send verification code
   const { data, error } = await sendMail({
@@ -148,7 +148,7 @@ export const loginUser = async (dto: LoginSchema) => {
     appAssert(verificationCode, NOT_FOUND, 'Failed to create verification code');
 
     // eslint-disable-next-line @stylistic/max-len
-    const url = `http://localhost:${APP_ORIGIN}/email/verify/${verificationCode.id}&exp=${new Date(expiresAt).getTime()}`;
+    const url = `${APP_ORIGIN}/email-verify/${verificationCode.id}?exp=${new Date(expiresAt).getTime()}`;
 
     // send verification code
     const { data, error } = await sendMail({
@@ -192,85 +192,87 @@ export const loginUser = async (dto: LoginSchema) => {
 
 export const verifyEmailAndLogin = async (dto: VerifyEmailSchema) => {
   // get the verification code
-  const validVerificationCode = await db.query.VerificationCodes.findFirst({
-    where: (VerificationCodes, { eq, and, gt }) =>
-      and(
-        eq(VerificationCodes.id, dto.verificationCode),
-        eq(VerificationCodes.type, VerificationCodeType.EMAIL_VERIFICATION),
-        gt(VerificationCodes.expiresAt, new Date().toISOString()),
-      ),
-  });
-
-  appAssert(validVerificationCode, NOT_FOUND, 'Invalid OR expired verification code');
-
-  // update user to verified true
-  const [updatedUser] = await db
-    .update(Users)
-    .set({ verified: true })
-    .where(eq(Users.id, validVerificationCode.userId))
-    .returning({
-      id: Users.id,
-      email: Users.email,
-      verified: Users.verified,
+  return await db.transaction(async (tx) => {
+    const validVerificationCode = await tx.query.VerificationCodes.findFirst({
+      where: (VerificationCodes, { eq, and, gt }) =>
+        and(
+          eq(VerificationCodes.id, dto.verificationCode),
+          eq(VerificationCodes.type, VerificationCodeType.EMAIL_VERIFICATION),
+          gt(VerificationCodes.expiresAt, new Date().toISOString()),
+        ),
     });
 
-  appAssert(updatedUser, INTERNAL_SERVER_ERROR, 'User verification failed');
+    appAssert(validVerificationCode, NOT_FOUND, 'Invalid OR expired verification code');
 
-  const verifiedUser = await db.query.Users.findFirst({
-    where: eq(Users.id, updatedUser.id),
-    with: {
-      profile: {
-        columns: {
-          role: true,
+    // update user to verified true
+    const [updatedUser] = await tx
+      .update(Users)
+      .set({ verified: true })
+      .where(eq(Users.id, validVerificationCode.userId))
+      .returning({
+        id: Users.id,
+        email: Users.email,
+        verified: Users.verified,
+      });
+
+    appAssert(updatedUser, INTERNAL_SERVER_ERROR, 'User verification failed');
+
+    const verifiedUser = await tx.query.Users.findFirst({
+      where: eq(Users.id, updatedUser.id),
+      with: {
+        profile: {
+          columns: {
+            role: true,
+          },
         },
       },
-    },
-    columns: {
-      id: true,
-      email: true,
-      verified: true,
-    },
-  });
+      columns: {
+        id: true,
+        email: true,
+        verified: true,
+      },
+    });
 
-  console.log(verifiedUser);
-  appAssert(
-    verifiedUser && verifiedUser.verified === true,
-    INTERNAL_SERVER_ERROR,
-    'User verification failed',
-  );
+    console.log(verifiedUser);
+    appAssert(
+      verifiedUser && verifiedUser.verified === true,
+      INTERNAL_SERVER_ERROR,
+      'User verification failed',
+    );
 
-  const [session] = await db
-    .insert(Sessions)
-    .values({
+    const [session] = await tx
+      .insert(Sessions)
+      .values({
+        userId: verifiedUser.id,
+        userAgent: dto.userAgent,
+        expiresAt: thirtyDaysFromNow().toISOString(),
+      })
+      .returning({ id: Sessions.id });
+
+    const accessToken = signToken({
       userId: verifiedUser.id,
-      userAgent: dto.userAgent,
-      expiresAt: thirtyDaysFromNow().toISOString(),
-    })
-    .returning({ id: Sessions.id });
-
-  const accessToken = signToken({
-    userId: verifiedUser.id,
-    role: verifiedUser.profile.role,
-    sessionId: session.id,
-  });
-
-  const refreshToken = signToken(
-    {
-      sessionId: session.id,
       role: verifiedUser.profile.role,
-    },
-    refreshTokenSignOptions,
-  );
+      sessionId: session.id,
+    });
 
-  // delete verification code
-  await db.delete(VerificationCodes).where(eq(VerificationCodes.id, dto.verificationCode));
+    const refreshToken = signToken(
+      {
+        sessionId: session.id,
+        role: verifiedUser.profile.role,
+      },
+      refreshTokenSignOptions,
+    );
 
-  // return user
-  return {
-    accessToken,
-    refreshToken,
-    verifiedUser,
-  };
+    // delete verification code
+    await db.delete(VerificationCodes).where(eq(VerificationCodes.id, dto.verificationCode));
+    console.log('DONE');
+    // return user
+    return {
+      accessToken,
+      refreshToken,
+      verifiedUser,
+    };
+  });
 };
 
 export const deleteSession = async (sessionId: string) => {
@@ -338,52 +340,54 @@ export const refreshUserAccessToken = async (refreshToken: string) => {
 };
 
 export const sendPasswordResetEmail = async (email: EmailSchema) => {
-  // get the user by email
-  const user = await db.query.Users.findFirst({
-    where: (Users, { eq }) => eq(Users.email, email),
+  return db.transaction(async (tx) => {
+    // get the user by email
+    const user = await tx.query.Users.findFirst({
+      where: (Users, { eq }) => eq(Users.email, email),
+    });
+    appAssert(user, NOT_FOUND, 'User not found');
+    // check email rate limit
+    const fiveMinAgo = fiveMinutesAgo().toISOString();
+    const count = await tx.$count(
+      VerificationCodes,
+      and(
+        eq(VerificationCodes.userId, user.id),
+        eq(VerificationCodes.type, VerificationCodeType.PASSWORD_RESET),
+        gt(VerificationCodes.createdAt, fiveMinAgo),
+      ),
+    );
+
+    appAssert(count <= 1, TOO_MANY_REQUESTS, 'Too many requests, please try again later');
+
+    // create verification code
+    const expiresAt = fiveMinutesFromNow().toISOString();
+    const [verificationCode] = await tx
+      .insert(VerificationCodes)
+      .values({
+        userId: user.id,
+        type: VerificationCodeType.PASSWORD_RESET,
+        expiresAt,
+      })
+      .returning();
+
+    appAssert(verificationCode, NOT_FOUND, 'Failed to create verification code');
+
+    // eslint-disable-next-line @stylistic/max-len
+    const url = `${APP_ORIGIN}/password-reset/${verificationCode.id}?exp=${new Date(expiresAt).getTime()}`;
+
+    const { data, error } = await sendMail({
+      to: user.email,
+      ...getPasswordResetTemplate(url),
+    });
+
+    appAssert(data?.id, INTERNAL_SERVER_ERROR, `${error?.name}: ${error?.message}`);
+
+    // return success
+    return {
+      url,
+      emailId: data.id,
+    };
   });
-  appAssert(user, NOT_FOUND, 'User not found');
-  // check email rate limit
-  const fiveMinAgo = fiveMinutesAgo().toISOString();
-  const count = await db.$count(
-    VerificationCodes,
-    and(
-      eq(VerificationCodes.userId, user.id),
-      eq(VerificationCodes.type, VerificationCodeType.PASSWORD_RESET),
-      gt(VerificationCodes.createdAt, fiveMinAgo),
-    ),
-  );
-
-  appAssert(count <= 1, TOO_MANY_REQUESTS, 'Too many requests, please try again later');
-
-  // create verification code
-  const expiresAt = fiveMinutesFromNow().toISOString();
-  const [verificationCode] = await db
-    .insert(VerificationCodes)
-    .values({
-      userId: user.id,
-      type: VerificationCodeType.PASSWORD_RESET,
-      expiresAt,
-    })
-    .returning();
-
-  appAssert(verificationCode, NOT_FOUND, 'Failed to create verification code');
-
-  // eslint-disable-next-line @stylistic/max-len
-  const url = `http://localhost:${APP_ORIGIN}/password-reset/${verificationCode.id}&exp=${new Date(expiresAt).getTime()}`;
-
-  const { data, error } = await sendMail({
-    to: user.email,
-    ...getPasswordResetTemplate(url),
-  });
-
-  appAssert(data?.id, INTERNAL_SERVER_ERROR, `${error?.name}: ${error?.message}`);
-
-  // return success
-  return {
-    url,
-    emailId: data.id,
-  };
 };
 
 type ResetPasswordParams = {
@@ -425,4 +429,31 @@ export const resetPassword = async (request: ResetPasswordParams) => {
   await db.delete(Sessions).where(eq(Sessions.userId, updatedUser.id));
   // return success
   return updatedUser;
+};
+
+export const getUserProfile = async (userId: string) => {
+  const user = await db.query.Users.findFirst({
+    where: eq(Users.id, userId),
+    with: {
+      profile: {
+        columns: {
+          id: true,
+          role: true,
+        },
+      },
+    },
+    columns: {
+      id: true,
+    },
+  });
+
+  appAssert(user, NOT_FOUND, 'User not found');
+
+  return {
+    user: {
+      id: user.id,
+      role: user.profile.role,
+      profileId: user.profile.id,
+    },
+  };
 };

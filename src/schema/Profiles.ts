@@ -2,6 +2,8 @@ import { boolean, pgTable, varchar, uuid, timestamp, pgEnum } from 'drizzle-orm/
 import { Users } from './Users.js';
 import { relations, sql } from 'drizzle-orm';
 import { Stores } from './Stores.js';
+import { Wishlists } from './Wishlists.js';
+import { Reports } from './Reports.js';
 
 export const roleEnum = pgEnum('roles', ['admin', 'buyer', 'seller']);
 
@@ -22,7 +24,7 @@ export const Profiles = pgTable('profiles', {
     .$onUpdate(() => sql`now()`),
 });
 
-export const profilesRelation = relations(Profiles, ({ one }) => ({
+export const profilesRelation = relations(Profiles, ({ one, many }) => ({
   user: one(Users, {
     fields: [Profiles.userId],
     references: [Users.id],
@@ -32,4 +34,6 @@ export const profilesRelation = relations(Profiles, ({ one }) => ({
     fields: [Profiles.id],
     references: [Stores.ownerId],
   }),
+  reports: many(Reports),
+  wishLists: many(Wishlists),
 }));

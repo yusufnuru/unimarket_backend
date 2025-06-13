@@ -7,7 +7,7 @@ import {
   verifyEmailHandler,
   sendPasswordResetHandler,
   resetPasswordResetHandler,
-  getMe,
+  getUserProfileHandler,
 } from './authController.js';
 import { authenticate } from '../middleware/authenticate.js';
 
@@ -20,5 +20,5 @@ authRoutes.get('/logout', logoutHandler);
 authRoutes.get('/email/verify/:code', verifyEmailHandler);
 authRoutes.post('/password/forgot', sendPasswordResetHandler);
 authRoutes.post('/password/reset', resetPasswordResetHandler);
-authRoutes.get('/me', authenticate, getMe);
+authRoutes.get('/me', authenticate, getUserProfileHandler);
 export default authRoutes;

@@ -1,6 +1,5 @@
 import catchError from '../utils/cacheErrors.js';
-import { productQuerySchema } from './productSchema.js';
-import { productParamSchema } from '../types/global.js';
+import { productQuerySchema, productParamSchema } from './productSchema.js';
 import { OK } from '../constants/http.js';
 import { getProduct, listProducts } from './productService.js';
 
@@ -20,10 +19,10 @@ export const getProductHandler = catchError(async (req, res) => {
 
 export const listProductsHandler = catchError(async (req, res) => {
   // validate request
-  const request = productQuerySchema.parse(req.query);
+  const query = productQuerySchema.parse(req.query);
 
   // call service
-  const { products, pagination } = await listProducts(request);
+  const { products, pagination } = await listProducts(query);
 
   // return response
   res.status(OK).json({

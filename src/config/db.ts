@@ -8,7 +8,11 @@ import * as storeSchema from '../schema/Stores.js';
 import * as storeRequestSchema from '../schema/StoreRequest.js';
 import * as productsSchema from '../schema/Products.js';
 import * as categoriesSchema from '../schema/Categories.js';
-import * as chatMessageSchema from '../schema/ChatMessages.js';
+import * as chatMessagesSchema from '../schema/ChatMessages.js';
+import * as chatRoomsSchema from '../schema/ChatRooms.js';
+import * as wishlistsSchema from '../schema/Wishlists.js';
+import * as reportsSchema from '../schema/Reports.js';
+import * as warningsSchema from '../schema/Warnings.js';
 import { DB_URL } from '../constants/env.js';
 
 const { Pool } = pkg;
@@ -26,7 +30,11 @@ export const db = drizzle(pool, {
     ...storeRequestSchema,
     ...productsSchema,
     ...categoriesSchema,
-    ...chatMessageSchema,
+    ...chatMessagesSchema,
+    ...chatRoomsSchema,
+    ...wishlistsSchema,
+    ...reportsSchema,
+    ...warningsSchema,
   },
 });
 

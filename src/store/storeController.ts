@@ -9,8 +9,8 @@ import {
   updateProductSchema,
   updateImageSchema,
   createStoreRequestSchema,
+  storeParamSchema,
 } from './storeSchema.js';
-import { productParamSchema } from '../types/global.js';
 import {
   createProduct,
   createStore,
@@ -24,9 +24,10 @@ import {
   updateProduct,
   deleteSellerProduct,
   createRequest,
+  listRequest,
 } from './storeService.js';
 import appAssert from '../utils/appAssert.js';
-import { storeParamSchema } from '../types/global.js';
+import { productQuerySchema, productParamSchema } from '../product/productSchema.js';
 
 export const listStoresHandler = catchError(async (req, res) => {
   const request = storeQuerySchema.parse(req.query);
@@ -35,10 +36,7 @@ export const listStoresHandler = catchError(async (req, res) => {
   const { stores } = await listStores(request);
 
   // return response
-  res.status(OK).json({
-    message: 'Stores fetched successfully',
-    stores,
-  });
+  res.status(OK).json({ message: 'Stores fetched successfully', stores });
 });
 
 export const getStoreHandler = catchError(async (req, res) => {
@@ -48,10 +46,7 @@ export const getStoreHandler = catchError(async (req, res) => {
   const { store } = await getStore(storeId);
 
   // return response
-  res.status(OK).json({
-    message: 'Store fetched successfully',
-    store,
-  });
+  res.status(OK).json({ message: 'Store fetched successfully', store });
 });
 
 export const registerStoreHandler = catchError(async (req, res) => {
@@ -60,12 +55,13 @@ export const registerStoreHandler = catchError(async (req, res) => {
   const request = createStoreSchema.parse(req.body);
 
   // call service
-  const { newStore } = await createStore(request, userId);
+  const { newStore, newRequest } = await createStore(request, userId);
 
   // return response
   res.status(CREATED).json({
     message: 'Store created successfully',
     store: newStore,
+    request: newRequest,
   });
 });
 
@@ -75,12 +71,11 @@ export const createRequestHandler = catchError(async (req, res) => {
   const storeId = storeParamSchema.parse(req.params.id);
   const request = createStoreRequestSchema.parse(req.body);
   // call service
-  const { store, newRequest } = await createRequest(userId, storeId, request);
+  const { newRequest } = await createRequest(userId, storeId, request);
 
   // return response
   res.status(OK).json({
     message: 'Store request created successfully',
-    store,
     request: newRequest,
   });
 });
@@ -104,10 +99,9 @@ export const updateStoreHandler = catchError(async (req, res) => {
 export const getSellerStoreHandler = catchError(async (req, res) => {
   // validate request
   const { userId } = req;
-  const storeId = storeParamSchema.parse(req.params.id);
 
   // call service
-  const { store } = await getSellerStore(storeId, userId);
+  const { store } = await getSellerStore(userId);
 
   // return response
   res.status(OK).json({
@@ -144,25 +138,20 @@ export const createProductHandler = catchError(async (req, res) => {
   const { newProduct } = await createProduct(userId, storeId, request, imageFiles);
 
   // return response
-  res.status(CREATED).json({
-    message: 'Product created successfully',
-    product: newProduct,
-  });
+  res.status(CREATED).json({ message: 'Product created successfully', product: newProduct });
 });
 
 export const listSellerProductsHandler = catchError(async (req, res) => {
   // validate request
   const { userId } = req;
   const storeId = storeParamSchema.parse(req.params.id);
+  const request = productQuerySchema.parse(req.query);
 
   // call service
-  const products = await listSellerProducts(storeId, userId);
+  const { products, pagination } = await listSellerProducts(storeId, userId, request);
 
   // return response
-  res.status(OK).json({
-    message: 'Products fetched successfully',
-    products,
-  });
+  res.status(OK).json({ message: 'Products fetched successfully', products, pagination });
 });
 
 export const getSellerProductHandler = catchError(async (req, res) => {
@@ -175,10 +164,7 @@ export const getSellerProductHandler = catchError(async (req, res) => {
   const { product } = await getSellerProduct(userId, storeId, productId);
 
   // return response
-  res.status(OK).json({
-    message: 'Product fetched successfully',
-    product,
-  });
+  res.status(OK).json({ message: 'Product fetched successfully', product });
 });
 
 export const updateProductHandler = catchError(async (req, res) => {
@@ -215,8 +201,18 @@ export const deleteSellerProductHandler = catchError(async (req, res) => {
   const { deletedProduct } = await deleteSellerProduct(userId, storeId, productId);
 
   // return response
-  res.status(OK).json({
-    message: 'Product deleted successfully',
-    product: deletedProduct,
-  });
+  res.status(OK).json({ message: 'Product deleted successfully', product: deletedProduct });
+});
+
+export const listRequestHandler = catchError(async (req, res) => {
+  // validate request
+  const { userId } = req;
+  const storeId = storeParamSchema.parse(req.params.id);
+  const request = storeQuerySchema.parse(req.query);
+
+  // call service
+  const { requests, pagination } = await listRequest(userId, storeId, request);
+
+  // return response
+  res.status(OK).json({ message: 'Requests fetched successfully', requests, pagination });
 });

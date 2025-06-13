@@ -47,4 +47,11 @@ export const productQuerySchema = z.object({
   sortOrder: z.enum(['asc', 'desc']).optional().default('desc'),
 });
 
-export type productQuerySchema = z.infer<typeof productQuerySchema>;
+export const productParamSchema = z
+  .string()
+  .uuid('Invalid product id')
+  .nonempty('Product id is required')
+  .transform((val) => validator.escape(val).trim());
+
+export type ProductParamSchema = z.infer<typeof productParamSchema>;
+export type ProductQuerySchema = z.infer<typeof productQuerySchema>;

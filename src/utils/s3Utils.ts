@@ -109,7 +109,7 @@ export const deleteFolder = async (folderPrefix: string) => {
   }
 };
 
-export const getObjectSignedUrl = async (key: string, expiresIn: number = 3600) => {
+export const getObjectSignedUrl = async (key: string, expiresIn: number = 3600 * 24) => {
   try {
     const params = {
       Bucket: BUCKET_NAME,

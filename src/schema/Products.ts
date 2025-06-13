@@ -2,6 +2,9 @@ import { pgTable, varchar, uuid, timestamp, numeric, boolean } from 'drizzle-orm
 import { relations, sql } from 'drizzle-orm';
 import { Stores } from './Stores.js';
 import { Categories } from './Categories.js';
+import { Wishlists } from './Wishlists.js';
+import { Reports } from './Reports.js';
+import { Warnings } from './Warnings.js';
 
 export const Products = pgTable('products', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -38,16 +41,17 @@ export const ProductImages = pgTable('product_images', {
 
 export const productsRelation = relations(Products, ({ one, many }) => ({
   images: many(ProductImages),
-
+  wishlists: many(Wishlists),
+  reports: many(Reports),
   category: one(Categories, {
     fields: [Products.categoryId],
     references: [Categories.id],
   }),
-
   store: one(Stores, {
     fields: [Products.storeId],
     references: [Stores.id],
   }),
+  warnings: many(Warnings),
 }));
 
 export const productImagesRelation = relations(ProductImages, ({ one }) => ({

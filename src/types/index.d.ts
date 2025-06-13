@@ -9,6 +9,12 @@ declare global {
       sessionId: string;
       role: string;
     }
+
+    interface Socket {
+      userId: string;
+      sessionId: string;
+      role: string;
+    }
   }
 }
 

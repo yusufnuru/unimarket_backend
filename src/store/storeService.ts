@@ -1,19 +1,22 @@
 import { db } from '../config/db.js';
-import { and, asc, desc, eq, ilike, inArray } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, ilike, inArray, lte, sql } from 'drizzle-orm';
 import { Profiles } from '../schema/Profiles.js';
 import appAssert from '../utils/appAssert.js';
 import { BAD_REQUEST, CONFLICT, FORBIDDEN, NOT_FOUND } from '../constants/http.js';
 import { Stores } from '../schema/Stores.js';
 import { StoreRequests } from '../schema/StoreRequest.js';
+import pLimit from 'p-limit';
 import {
-  createStoreSchema,
-  storeQuerySchema,
-  updateStoreSchema,
-  createProductSchema,
-  updateProductSchema,
-  createStoreRequestSchema,
+  CreateStoreSchema,
+  StoreQuerySchema,
+  UpdateStoreSchema,
+  CreateProductSchema,
+  UpdateProductSchema,
+  CreateStoreRequestSchema,
+  StoreParamSchema,
+  StoreRequestQuerySchema,
 } from './storeSchema.js';
-import { productParamSchema } from '../types/global.js';
+import { ProductParamSchema, ProductQuerySchema } from '../product/productSchema.js';
 import { ProductImages, Products } from '../schema/Products.js';
 import {
   checkFolderExists,
@@ -25,7 +28,9 @@ import {
 import sanitize from 'sanitize-filename';
 import { imageFileBuffer } from '../utils/imageFile.js';
 import { Categories } from '../schema/Categories.js';
-import { TransactionType, storeParamSchema } from '../types/global.js';
+import { TransactionType } from '../types/global.js';
+import { Wishlists } from '../schema/Wishlists.js';
+import { StoreRequestParamSchema } from '../admin/adminSchema.js';
 
 /**
  * Helper function to get authorized seller and their store
@@ -35,11 +40,7 @@ import { TransactionType, storeParamSchema } from '../types/global.js';
  * @returns Object containing seller and store
  */
 
-async function getAuthorizedSellerAndStore(
-  tx: TransactionType,
-  userId: string,
-  storeId: string | null = null,
-) {
+async function getAuthorizedSellerAndStore(tx: TransactionType, userId: string, storeId: string) {
   const seller = await tx.query.Profiles.findFirst({
     where: eq(Profiles.userId, userId),
     with: {
@@ -70,7 +71,172 @@ async function getAuthorizedSellerAndStore(
   return { seller, store: seller.store };
 }
 
-export const listStores = async (query: storeQuerySchema) => {
+/**
+ * Lists products for a specific store with pagination and filtering options
+ * @param query - Query parameters for filtering and pagination
+ * @param storeId - ID of the store to list products from
+ * @returns Object containing products and pagination info
+ */
+
+export const listStoreProducts = async (storeId: string, query: ProductQuerySchema) => {
+  const { page, limit, search, maxPrice, minPrice, sortBy, sortOrder, categoryId } = query;
+
+  const offset = (page - 1) * limit;
+
+  const whereConditions = [eq(Products.storeId, storeId)];
+
+  if (search) {
+    whereConditions.push(ilike(Products.productName, `%${search}%`));
+  }
+  if (categoryId) {
+    whereConditions.push(eq(Products.categoryId, categoryId));
+  }
+  if (minPrice !== undefined) {
+    whereConditions.push(gte(Products.price, minPrice));
+  }
+  if (maxPrice !== undefined) {
+    whereConditions.push(lte(Products.price, maxPrice));
+  }
+
+  const where = and(...whereConditions);
+
+  const products = await db.query.Products.findMany({
+    where,
+    orderBy:
+      sortBy === 'price'
+        ? sortOrder === 'asc'
+          ? asc(Products.price)
+          : desc(Products.price)
+        : sortBy === 'productName'
+          ? sortOrder === 'asc'
+            ? asc(Products.productName)
+            : desc(Products.productName)
+          : sortOrder === 'asc'
+            ? asc(Products.createdAt)
+            : desc(Products.createdAt),
+    limit,
+    offset,
+    with: {
+      images: {
+        columns: {
+          id: true,
+          imageUrl: true,
+        },
+      },
+      category: {
+        columns: {
+          id: true,
+          name: true,
+        },
+      },
+    },
+  });
+
+  const total = await db.$count(Products, where);
+
+  appAssert(products, NOT_FOUND, 'Products not found');
+
+  const productsIds = products.map((p) => p.id);
+
+  const wishlistCounts = await db
+    .select({
+      productId: Wishlists.productId,
+      count: sql<number>`count(*)`.as('count'),
+    })
+    .from(Wishlists)
+    .where(inArray(Wishlists.productId, productsIds))
+    .groupBy(Wishlists.productId);
+
+  const wishlistCountMap = new Map<string, number>(
+    wishlistCounts.map((wc) => [wc.productId, wc.count]),
+  );
+
+  const productsWithImages = await Promise.all(
+    products.map(async (product) => ({
+      ...product,
+      images: await Promise.all(
+        product.images.map(async (image) => ({
+          id: image.id,
+          imageUrl: await getObjectSignedUrl(image.imageUrl),
+        })),
+      ),
+      wishlistCount: wishlistCountMap.get(product.id) || 0,
+    })),
+  );
+
+  appAssert(productsWithImages, NOT_FOUND, 'Products not found');
+
+  return {
+    products: productsWithImages,
+    pagination: { page, limit, total, pages: Math.ceil(total / limit) },
+  };
+};
+
+/**
+ * Retrieves a specific product from a store with detailed information
+ * @param storeId - ID of the store containing the product
+ * @param productId - ID of the product to retrieve
+ * @returns Object containing the product with signed image URLs and wishlist count
+ */
+
+export const getStoreProduct = async (storeId: string, productId: string) => {
+  const product = await db.query.Products.findFirst({
+    where: and(eq(Products.id, productId), eq(Products.storeId, storeId)),
+    with: {
+      category: {
+        columns: {
+          id: true,
+          name: true,
+        },
+      },
+      images: {
+        columns: {
+          id: true,
+          imageUrl: true,
+        },
+      },
+      wishlists: {
+        where: eq(Wishlists.productId, productId),
+        columns: {
+          id: true,
+        },
+      },
+    },
+  });
+
+  appAssert(product, NOT_FOUND, 'Product not found');
+  const wishlistCount = product.wishlists.length;
+
+  const productWithImages = {
+    id: product.id,
+    productName: product.productName,
+    description: product.description,
+    price: product.price,
+    quantity: product.quantity,
+    createdAt: product.createdAt,
+    updatedAt: product.updatedAt,
+    storeId: product.storeId,
+    categoryId: product.categoryId,
+    visibility: product.visibility,
+    category: {
+      id: product.category.id,
+      name: product.category.name,
+    },
+    wishlistCount,
+    images: await Promise.all(
+      product.images.map(async (image) => ({
+        id: image.id,
+        imageUrl: await getObjectSignedUrl(image.imageUrl),
+      })),
+    ),
+  };
+
+  appAssert(productWithImages, NOT_FOUND, 'Product not found');
+
+  return { product: productWithImages };
+};
+
+export const listStores = async (query: StoreQuerySchema) => {
   const { page, limit, search, sortBy } = query;
   const offset = (page - 1) * limit;
 
@@ -96,7 +262,7 @@ export const listStores = async (query: storeQuerySchema) => {
   return { stores, pagination: { page, limit, total, pages: Math.ceil(total / limit) } };
 };
 
-export const getStore = async (storeId: storeParamSchema) => {
+export const getStore = async (storeId: StoreParamSchema) => {
   const store = await db.query.Stores.findFirst({
     where: and(eq(Stores.id, storeId), eq(Stores.storeStatus, 'active')),
     with: {
@@ -123,7 +289,7 @@ export const getStore = async (storeId: storeParamSchema) => {
   return { store };
 };
 
-export const createStore = async (storeDto: createStoreSchema, userId: string) => {
+export const createStore = async (storeDto: CreateStoreSchema, userId: string) => {
   return await db.transaction(async (tx) => {
     const seller = await tx.query.Profiles.findFirst({
       where: eq(Profiles.userId, userId),
@@ -175,23 +341,27 @@ export const createStore = async (storeDto: createStoreSchema, userId: string) =
 
     appAssert(newRequest, NOT_FOUND, 'Store Request creation failed');
 
-    return { newStore };
+    return { newStore, newRequest };
   });
 };
 
 export const createRequest = async (
   userId: string,
-  storeId: storeParamSchema,
-  request: createStoreRequestSchema,
+  storeId: StoreParamSchema,
+  request: CreateStoreRequestSchema,
 ) => {
   return await db.transaction(async (tx) => {
     const { store } = await getAuthorizedSellerAndStore(tx, userId, storeId);
 
-    const existingRequest = await tx.query.StoreRequests.findFirst({
+    const existingRequest = await tx.query.StoreRequests.findMany({
       where: and(eq(StoreRequests.storeId, store.id), eq(StoreRequests.requestStatus, 'pending')),
     });
 
-    appAssert(!existingRequest, CONFLICT, 'Request already exists');
+    appAssert(
+      existingRequest.length < 5,
+      CONFLICT,
+      'You have reached the maximum limit of 5 pending requests',
+    );
 
     const [newRequest] = await tx
       .insert(StoreRequests)
@@ -203,14 +373,28 @@ export const createRequest = async (
 
     appAssert(newRequest, NOT_FOUND, 'Request creation failed');
 
-    return { store, newRequest };
+    return {
+      newRequest: {
+        id: newRequest.id,
+        storeId: newRequest.storeId,
+        requestMessage: newRequest.requestMessage,
+        requestStatus: newRequest.requestStatus,
+        rejectionReason: newRequest.rejectionReason,
+        createdAt: newRequest.createdAt,
+        updatedAt: newRequest.updatedAt,
+        store: {
+          id: store.id,
+          storeName: store.storeName,
+        },
+      },
+    };
   });
 };
 
 export const updateStore = async (
-  storeDto: updateStoreSchema,
+  storeDto: UpdateStoreSchema,
   userId: string,
-  storeId: storeParamSchema,
+  storeId: StoreParamSchema,
 ) => {
   return await db.transaction(async (tx) => {
     const { store } = await getAuthorizedSellerAndStore(tx, userId, storeId);
@@ -237,15 +421,54 @@ export const updateStore = async (
   });
 };
 
-export const getSellerStore = async (storeId: storeParamSchema, userId: string) => {
+export const getSellerStore = async (userId: string) => {
   return await db.transaction(async (tx) => {
-    const { store } = await getAuthorizedSellerAndStore(tx, userId, storeId);
+    const seller = await tx.query.Profiles.findFirst({
+      where: eq(Profiles.userId, userId),
+      with: {
+        user: {
+          columns: {
+            id: true,
+          },
+        },
+        store: {
+          columns: {
+            id: true,
+            ownerId: true,
+            storeName: true,
+            storeStatus: true,
+            description: true,
+            storeAddress: true,
+          },
+        },
+      },
+    });
 
-    return { store };
+    appAssert(
+      seller && seller.hasStore,
+      FORBIDDEN,
+      'You are not authorized to access the store or store not found',
+    );
+
+    if (!seller.store) {
+      return { store: null };
+    }
+
+    return {
+      store: {
+        address: seller.store.storeAddress,
+        id: seller.store.id,
+        ownerId: seller.store.ownerId,
+        ownerName: seller.fullName,
+        description: seller.store.description,
+        name: seller.store.storeName,
+        status: seller.store.storeStatus,
+      },
+    };
   });
 };
 
-export const deleteSellerStore = async (storeId: storeParamSchema, userId: string) => {
+export const deleteSellerStore = async (storeId: StoreParamSchema, userId: string) => {
   return await db.transaction(async (tx) => {
     const { store, seller } = await getAuthorizedSellerAndStore(tx, userId, storeId);
     const sellerId = seller.id;
@@ -290,8 +513,8 @@ export const deleteSellerStore = async (storeId: storeParamSchema, userId: strin
 
 export const createProduct = async (
   userId: string,
-  storeId: storeParamSchema,
-  productDto: createProductSchema,
+  storeId: StoreParamSchema,
+  productDto: CreateProductSchema,
   imageFiles: Express.Multer.File[],
 ) => {
   return await db.transaction(async (tx) => {
@@ -322,16 +545,20 @@ export const createProduct = async (
       const folderExist = await checkFolderExists(filePath);
 
       appAssert(!folderExist, CONFLICT, 'Product already exists');
+      const limit = pLimit(3);
       try {
-        const uploadPromises = imageFiles.map(async (file) => {
-          const imageName = `${newProduct.id}-img-${Date.now()}-${sanitize(file.originalname)}`;
-          const buffer = await imageFileBuffer(file.buffer);
-          const fullPath = `${filePath}/${imageName}`;
-
-          await uploadFile(buffer, imageName, file.mimetype, filePath);
-
-          return `${fullPath}`;
-        });
+        const uploadPromises = imageFiles.map(async (file, index) =>
+          limit(async () => {
+            const imageName = `${newProduct.id}-img-${Date.now()}-${sanitize(file.originalname)}`;
+            const timerLabel = `ImageResize-${index}-${Date.now()}`;
+            console.time(timerLabel);
+            const buffer = await imageFileBuffer(file.buffer);
+            console.timeEnd(timerLabel);
+            const fullPath = `${filePath}/${imageName}`;
+            await uploadFile(buffer, imageName, file.mimetype, filePath);
+            return `${fullPath}`;
+          }),
+        );
         return await Promise.all(uploadPromises);
       } catch (error) {
         console.error('Error uploading file', error);
@@ -356,106 +583,40 @@ export const createProduct = async (
 
     return {
       newProduct: {
-        newProduct,
+        ...newProduct,
         images,
       },
     };
   });
 };
 
-export const listSellerProducts = async (storeId: storeParamSchema, userId: string) => {
+export const listSellerProducts = async (
+  storeId: StoreParamSchema,
+  userId: string,
+  query: ProductQuerySchema,
+) => {
   return await db.transaction(async (tx) => {
     const { store } = await getAuthorizedSellerAndStore(tx, userId, storeId);
-
-    const products = await tx.query.Products.findMany({
-      where: eq(Products.storeId, store.id),
-      with: {
-        category: {
-          columns: {
-            id: true,
-            name: true,
-          },
-        },
-        images: {
-          columns: {
-            id: true,
-            imageUrl: true,
-          },
-        },
-      },
-    });
-
-    appAssert(products.length > 0, NOT_FOUND, 'Products not found');
-
-    const productsWithImages = await Promise.all(
-      products.map(async (product) => {
-        return {
-          ...product,
-          images: await Promise.all(
-            product.images.map(async (image) => ({
-              id: image.id,
-              imageUrl: await getObjectSignedUrl(image.imageUrl),
-            })),
-          ),
-        };
-      }),
-    );
-
-    appAssert(productsWithImages.length > 0, NOT_FOUND, 'Products not found');
-
-    return { products: productsWithImages };
+    return await listStoreProducts(store.id, query);
   });
 };
 
 export const getSellerProduct = async (
   userId: string,
-  storeId: storeParamSchema,
-  productId: productParamSchema,
+  storeId: StoreParamSchema,
+  productId: ProductParamSchema,
 ) => {
   return await db.transaction(async (tx) => {
     const { store } = await getAuthorizedSellerAndStore(tx, userId, storeId);
-
-    const product = await tx.query.Products.findFirst({
-      where: and(eq(Products.id, productId), eq(Products.storeId, store.id)),
-      with: {
-        category: {
-          columns: {
-            id: true,
-            name: true,
-          },
-        },
-        images: {
-          columns: {
-            id: true,
-            imageUrl: true,
-          },
-        },
-      },
-    });
-
-    appAssert(product, NOT_FOUND, 'Product not found');
-
-    const productWithImages = {
-      ...product,
-      images: await Promise.all(
-        product.images.map(async (image) => ({
-          id: image.id,
-          imageUrl: await getObjectSignedUrl(image.imageUrl),
-        })),
-      ),
-    };
-
-    appAssert(productWithImages, NOT_FOUND, 'Product not found');
-
-    return { product: productWithImages };
+    return await getStoreProduct(store.id, productId);
   });
 };
 
 export const updateProduct = async (
   userId: string,
-  storeId: storeParamSchema,
-  productId: productParamSchema,
-  productDto: updateProductSchema,
+  storeId: StoreParamSchema,
+  productId: ProductParamSchema,
+  productDto: UpdateProductSchema,
   imageFiles: Express.Multer.File[],
 ) => {
   return await db.transaction(async (tx) => {
@@ -484,7 +645,7 @@ export const updateProduct = async (
       const imagesToDelete = await tx.query.ProductImages.findMany({
         where: and(
           eq(ProductImages.productId, updatedProduct.id),
-          inArray(ProductImages.imageUrl, productDto.imagesToRemove),
+          inArray(ProductImages.id, productDto.imagesToRemove),
         ),
       });
       appAssert(imagesToDelete.length > 0, NOT_FOUND, 'Images not found');
@@ -499,7 +660,7 @@ export const updateProduct = async (
         .where(
           and(
             eq(ProductImages.productId, updatedProduct.id),
-            inArray(ProductImages.imageUrl, productDto.imagesToRemove),
+            inArray(ProductImages.id, productDto.imagesToRemove),
           ),
         )
         .returning();
@@ -510,7 +671,11 @@ export const updateProduct = async (
     if (imageFiles.length > 0) {
       for (const file of imageFiles) {
         const imageName = `${updatedProduct.id}-img-${Date.now()}-${sanitize(file.originalname)}`;
+        const timerLabel = `ImageResize-${Date.now()}`;
+
+        console.time(timerLabel);
         const buffer = await imageFileBuffer(file.buffer);
+        console.timeEnd(timerLabel);
         const fullPath = `${filePath}/${imageName}`;
 
         await uploadFile(buffer, imageName, file.mimetype, filePath);
@@ -536,8 +701,8 @@ export const updateProduct = async (
 
 export const deleteSellerProduct = async (
   userId: string,
-  storeId: storeParamSchema,
-  productId: productParamSchema,
+  storeId: StoreParamSchema,
+  productId: ProductParamSchema,
 ) => {
   return await db.transaction(async (tx) => {
     const { store } = await getAuthorizedSellerAndStore(tx, userId, storeId);
@@ -549,10 +714,43 @@ export const deleteSellerProduct = async (
 
     appAssert(deletedProduct, NOT_FOUND, 'Product not found');
     const folderPath = `products/${deletedProduct.id}`;
-    const folderExist = await checkFolderExists(folderPath);
-    appAssert(folderExist, NOT_FOUND, 'Product folder not found');
     await deleteFolder(folderPath);
 
     return { deletedProduct, deletedFolderPath: folderPath };
+  });
+};
+
+export const listRequest = async (
+  userId: string,
+  storeId: StoreParamSchema,
+  query: StoreRequestQuerySchema,
+) => {
+  return await db.transaction(async (tx) => {
+    const { store } = await getAuthorizedSellerAndStore(tx, userId, storeId);
+    const { page, limit } = query;
+    const offset = (page - 1) * limit;
+    const requests = await tx.query.StoreRequests.findMany({
+      where: eq(StoreRequests.storeId, store.id),
+      columns: {
+        approvedBy: false,
+      },
+      with: {
+        store: {
+          columns: {
+            id: true,
+            storeName: true,
+          },
+        },
+      },
+      orderBy: desc(StoreRequests.createdAt),
+      limit,
+      offset,
+    });
+
+    appAssert(requests.length > 0, NOT_FOUND, 'Requests found successfully');
+
+    const total = await tx.$count(StoreRequests, eq(StoreRequests.storeId, store.id));
+
+    return { requests, pagination: { page, limit, total, pages: Math.ceil(total / limit) } };
   });
 };

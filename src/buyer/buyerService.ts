@@ -1,4 +1,4 @@
-import { BuyerParamSchema } from './buyerSchema.js';
+import { BuyerParamSchema, CreateReportSchema } from './buyerSchema.js';
 import { ProductParamSchema } from '../product/productSchema.js';
 import { db } from '../config/db.js';
 import { Profiles } from '../schema/Profiles.js';
@@ -8,6 +8,7 @@ import appAssert from '../utils/appAssert.js';
 import { BAD_REQUEST, NOT_FOUND } from '../constants/http.js';
 import { Products } from '../schema/Products.js';
 import { getObjectSignedUrl } from '../utils/s3Utils.js';
+import { Reports } from '../schema/Reports.js';
 
 export const addToWishList = (
   userId: string,
@@ -137,4 +138,46 @@ export const removeWishListItem = async (
   return {
     message: 'Wishlist item removed successfully',
   };
+};
+
+export const createReport = async (
+  userId: string,
+  buyerId: BuyerParamSchema,
+  request: CreateReportSchema,
+) => {
+  type Reason = 'spam' | 'scam' | 'offensive' | 'other';
+  return db.transaction(async (tx) => {
+    const buyer = await tx.query.Profiles.findFirst({
+      where: and(eq(Profiles.id, buyerId), eq(Profiles.userId, userId), eq(Profiles.role, 'buyer')),
+    });
+
+    appAssert(buyer, NOT_FOUND, 'Buyer not found');
+
+    const product = await tx.query.Products.findFirst({
+      where: and(eq(Products.id, request.productId), eq(Products.visibility, true)),
+    });
+
+    appAssert(product, NOT_FOUND, 'Product not found');
+
+    const existingReport = await tx.query.Reports.findFirst({
+      where: and(eq(Reports.buyerId, buyer.id), eq(Reports.productId, product.id)),
+    });
+
+    appAssert(!existingReport, BAD_REQUEST, 'You have already reported this product');
+
+    const newReport = await tx
+      .insert(Reports)
+      .values({
+        buyerId: buyer.id,
+        productId: product.id,
+        reason: request.reason as Reason,
+        description: request.description,
+      })
+      .returning();
+
+    return {
+      message: 'Report created successfully',
+      report: newReport,
+    };
+  });
 };

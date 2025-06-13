@@ -2,6 +2,7 @@ import catchError from '../utils/cacheErrors.js';
 import {
   createAccount,
   deleteSession,
+  getUserProfile,
   loginUser,
   refreshUserAccessToken,
   resetPassword,
@@ -133,10 +134,13 @@ export const resetPasswordResetHandler = catchError(async (req, res) => {
   });
 });
 
-export const getMe = catchError((req, res, next) => {
-  res.json({
-    userId: req.userId,
-    role: req.role, // Ensure this is correctly sent
+export const getUserProfileHandler = catchError(async (req, res, next) => {
+  const userId = req.userId;
+
+  const { user } = await getUserProfile(userId);
+
+  res.status(OK).json({
+    user,
   });
   next();
 });

@@ -1,8 +1,9 @@
 import catchError from '../utils/cacheErrors.js';
 import { productParamSchema, type ProductParamSchema } from '../product/productSchema.js';
-import { buyerParamSchema } from './buyerSchema.js';
+import { buyerParamSchema, createReportSchema } from './buyerSchema.js';
 import {
   addToWishList,
+  createReport,
   getWishListItem,
   listWishLists,
   removeWishListItem,
@@ -68,5 +69,20 @@ export const removeWishListItemHandler = catchError(async (req, res) => {
   // return response
   res.status(CREATED).json({
     message,
+  });
+});
+
+export const createReportHandler = catchError(async (req, res) => {
+  const userId = req.userId;
+  const buyerId = buyerParamSchema.parse(req.params.id);
+  const request = createReportSchema.parse(req.body);
+
+  // call service
+  const { message, report } = await createReport(userId, buyerId, request);
+
+  // return response
+  res.status(CREATED).json({
+    message,
+    report,
   });
 });

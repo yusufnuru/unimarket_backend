@@ -8,6 +8,7 @@ import {
   getSellerProductHandler,
   getSellerStoreHandler,
   getStoreHandler,
+  listRequestHandler,
   listSellerProductsHandler,
   listStoresHandler,
   registerStoreHandler,
@@ -27,9 +28,10 @@ publicStoreRoutes.get('/:id', getStoreHandler);
 //seller routes
 storeRoutes.post('/create', authorizeSeller, registerStoreHandler);
 storeRoutes.post('/:id/request', authorizeSeller, createRequestHandler);
-storeRoutes.patch('/:id/seller', authorizeSeller, updateStoreHandler);
-storeRoutes.get('/:id/seller', authorizeSeller, getSellerStoreHandler);
-storeRoutes.delete('/:id/seller', authorizeSeller, deleteSellerStoreHandler);
+storeRoutes.get('/:id/request', authorizeSeller, listRequestHandler);
+storeRoutes.patch('/:id', authorizeSeller, updateStoreHandler);
+storeRoutes.get('/', authorizeSeller, getSellerStoreHandler);
+storeRoutes.delete('/:id', authorizeSeller, deleteSellerStoreHandler);
 storeRoutes.post('/:id/products', authorizeSeller, uploadMultipleImages(), createProductHandler);
 storeRoutes.get('/:id/products', authorizeSeller, listSellerProductsHandler);
 storeRoutes.get('/:id/products/:productId', authorizeSeller, getSellerProductHandler);

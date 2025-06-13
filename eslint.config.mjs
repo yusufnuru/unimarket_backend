@@ -1,4 +1,3 @@
-// @ts-check
 import globals from 'globals';
 import pluginJs from '@eslint/js';
 import tseslint from 'typescript-eslint';
@@ -23,7 +22,7 @@ export default tseslint.config(
       globals: {
         ...globals.browser,
         ...globals.node,
-        ...globals.jest,
+        ...globals.vitest,
       },
       sourceType: 'module',
       parserOptions: {
@@ -47,7 +46,6 @@ export default tseslint.config(
       '@typescript-eslint/no-unsafe-argument': 'error',
       '@typescript-eslint/no-unsafe-return': 'error',
 
-      // Prettier integration
       'prettier/prettier': [
         'error',
         {

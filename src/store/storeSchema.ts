@@ -249,11 +249,39 @@ export const storeQuerySchema = z.object({
     .transform((val) => (val ? validator.escape(val).trim() : val)),
 });
 
-export type createStoreRequestSchema = z.infer<typeof createStoreRequestSchema>;
-export type createStoreSchema = z.infer<typeof createStoreSchema>;
-export type updateStoreSchema = z.infer<typeof updateStoreSchema>;
-export type createProductSchema = z.infer<typeof createProductSchema>;
-export type storeQuerySchema = z.infer<typeof storeQuerySchema>;
-export type updateProductSchema = z.infer<typeof updateProductSchema>;
-export type addImageSchema = z.infer<typeof addImageSchema>;
-export type updateImageSchema = z.infer<typeof updateImageSchema>;
+export const storeParamSchema = z
+  .string()
+  .uuid('Invalid store id')
+  .nonempty('Store id is required')
+  .transform((val) => validator.escape(val).trim());
+
+export const storeRequestQuerySchema = z.object({
+  page: z
+    .string()
+    .transform((val) => validator.escape(val).trim())
+    .refine((val) => !isNaN(Number(val)), { message: 'Page must be a number' })
+    .transform((val) => Number(val))
+    .default('1'),
+  limit: z
+    .string()
+    .transform((val) => validator.escape(val).trim())
+    .refine((val) => !isNaN(Number(val)), { message: 'Limit must be a number' })
+    .transform((val) => Number(val))
+    .default('5'),
+  status: z
+    .enum(['pending', 'approved', 'rejected'], {
+      errorMap: () => ({ message: 'Invalid status value' }),
+    })
+    .optional(),
+});
+
+export type StoreParamSchema = z.infer<typeof storeParamSchema>;
+export type CreateStoreRequestSchema = z.infer<typeof createStoreRequestSchema>;
+export type CreateStoreSchema = z.infer<typeof createStoreSchema>;
+export type UpdateStoreSchema = z.infer<typeof updateStoreSchema>;
+export type CreateProductSchema = z.infer<typeof createProductSchema>;
+export type StoreQuerySchema = z.infer<typeof storeQuerySchema>;
+export type UpdateProductSchema = z.infer<typeof updateProductSchema>;
+export type AddImageSchema = z.infer<typeof addImageSchema>;
+export type UpdateImageSchema = z.infer<typeof updateImageSchema>;
+export type StoreRequestQuerySchema = z.infer<typeof storeRequestQuerySchema>;

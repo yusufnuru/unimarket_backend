@@ -13,7 +13,7 @@ export const StoreRequests = pgTable('store_requests', {
   requestMessage: varchar('request_message', { length: 500 }).notNull(),
   requestStatus: requestStatusEnum('request_status').default('pending').notNull(),
   rejectionReason: varchar('rejection_reason', { length: 500 }),
-  approvedBy: uuid('approved_by').references(() => Profiles.id, { onDelete: 'set null' }),
+  approvedBy: uuid('approved_by').references(() => Profiles.id, { onDelete: 'restrict' }),
   createdAt: timestamp('created_at', { mode: 'string' }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { mode: 'string' })
     .notNull()

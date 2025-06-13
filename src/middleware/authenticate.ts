@@ -13,7 +13,14 @@ interface AuthenticatedRequest extends Request {
 
 export const authenticate = (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   const accessToken = req.cookies.accessToken;
-  appAssert(accessToken, UNAUTHORIZED, 'Not authorized', AppErrorCode.InvalidAccessToken);
+  console.log('Access token:', accessToken);
+  console.log('Cookies:', req.cookies);
+
+  if (!accessToken) {
+    res.status(UNAUTHORIZED).json({
+      message: 'Token expired',
+    });
+  }
 
   const { error, payload } = verifyToken(accessToken);
   appAssert(

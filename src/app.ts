@@ -11,17 +11,17 @@ import { productRoutes, publicProductRoutes } from './product/productRoutes.js';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
 import { closeDatabase, connectToDatabase } from './config/db.js';
-import { PORT, NODE_ENV } from './constants/env.js';
+import { PORT, NODE_ENV, APP_ORIGIN } from './constants/env.js';
 import chatRouter from './chat/chatRoutes.js';
 import { publicCategoryRouter } from './category/categoryRoutes.js';
 import { setUpMessageHandler } from './chat/chatMessageSocketHandler.js';
 import buyerRoutes from './buyer/buyerRoutes.js';
 
 const app = express();
-const server = createServer(void app);
+const server = createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: ['http://localhost:3000', 'http://localhost:3001'],
+    origin: [`${APP_ORIGIN}`],
     credentials: true,
   },
 });
@@ -32,7 +32,7 @@ setUpMessageHandler(io);
 
 app.use(
   cors({
-    origin: ['http://localhost:3000', 'http://localhost:3001'],
+    origin: [`${APP_ORIGIN}`],
     credentials: true,
   }),
 );
@@ -68,7 +68,7 @@ app.use((req, res, next) => {
 });
 app.use(errorHandler);
 
-server.listen(Number(PORT), '0.0.0.0', () => {
+server.listen(Number(PORT), 'localhost', () => {
   console.log(`[server]: Server is running at http://localhost:${PORT} in ${NODE_ENV} environment`);
 
   connectToDatabase()

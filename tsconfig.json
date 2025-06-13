@@ -10,8 +10,8 @@
     "outDir": "./dist",
     "noImplicitAny": true, 
     "sourceMap": true,
-    "types": ["node", "vitest/globals"]
+    "types": ["node", "vitest/globals"],
   },
-  "include": ["src/**/*"], // which files to compile
+  "include": ["src/**/*", "test/**/*", "drizzle/**/*"], // which files to compile
   "exclude": ["node_modules"], // which files to skip
 }
