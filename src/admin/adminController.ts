@@ -3,6 +3,7 @@ import {
   approveStoreRequest,
   getProductAdmin,
   getStoreAdmin,
+  getStoreRequestAdmin,
   listProductReports,
   listProductWarnings,
   listReports,
@@ -13,7 +14,10 @@ import {
   listStoreWarnings,
   listWarnings,
   rejectStoreRequest,
+  restoreStoreProducts,
   reviewStoreProducts,
+  listStoreRequestsByStore,
+  listProductsAdmin,
 } from './adminService.js';
 import {
   adminParamSchema,
@@ -47,7 +51,7 @@ export const rejectStoreRequestHandler = catchError(async (req, res) => {
   const rejectionReason = rejectRequestSchema.parse(req.body);
 
   // call service
-  const { store, storeRequest } = await rejectStoreRequest(
+  const { storeRequest } = await rejectStoreRequest(
     userId,
     adminId,
     storeRequestId,
@@ -55,7 +59,7 @@ export const rejectStoreRequestHandler = catchError(async (req, res) => {
   );
 
   // return response
-  res.status(OK).json({ message: 'Store request rejected successfully', storeRequest, store });
+  res.status(OK).json({ message: 'Store request rejected successfully', storeRequest });
 });
 
 export const reviewStoreProductsHandler = catchError(async (req, res) => {
@@ -77,6 +81,20 @@ export const reviewStoreProductsHandler = catchError(async (req, res) => {
 
   // return response
   res.status(OK).json({ message: 'Warning created successfully', product, warning, store });
+});
+
+export const restoreStoreProductsHandler = catchError(async (req, res) => {
+  // validate request
+  const { userId } = req;
+  const adminId = adminParamSchema.parse(req.params.id);
+  const storeId = storeParamSchema.parse(req.params.storeId);
+  const productId = productParamSchema.parse(req.params.productId);
+
+  // call service to create warning
+  const { product, store } = await restoreStoreProducts(userId, adminId, storeId, productId);
+
+  // return response
+  res.status(OK).json({ message: 'Product restored successfully', product, store });
 });
 
 export const listWarningsHandler = catchError(async (req, res) => {
@@ -163,10 +181,10 @@ export const listStoresAdminHandler = catchError(async (req, res) => {
   const request = adminStoreQuerySchema.parse(req.query);
 
   // call service to list stores
-  const stores = await listStoresAdmin(userId, adminId, request);
+  const { pagination, stores } = await listStoresAdmin(userId, adminId, request);
 
   // return response
-  res.status(OK).json({ message: 'Stores retrieved successfully', stores });
+  res.status(OK).json({ message: 'Stores retrieved successfully', stores, pagination });
 });
 
 export const getStoreAdminHandler = catchError(async (req, res) => {
@@ -182,18 +200,30 @@ export const getStoreAdminHandler = catchError(async (req, res) => {
   res.status(OK).json({ message: 'Store retrieved successfully', store });
 });
 
-export const getStoreProductAdminHandler = catchError(async (req, res) => {
+export const getProductAdminHandler = catchError(async (req, res) => {
   // validate request
   const { userId } = req;
   const adminId = adminParamSchema.parse(req.params.id);
-  const storeId = storeParamSchema.parse(req.params.storeId);
   const productId = productParamSchema.parse(req.params.productId);
 
   // call service to get product
-  const { product } = await getProductAdmin(userId, adminId, storeId, productId);
+  const { product } = await getProductAdmin(userId, adminId, productId);
 
   // return response
   res.status(OK).json({ message: 'Product retrieved successfully', product });
+});
+
+export const listProductsAdminHandler = catchError(async (req, res) => {
+  // validate request
+  const { userId } = req;
+  const adminId = adminParamSchema.parse(req.params.id);
+  const request = productQuerySchema.parse(req.query);
+
+  // call service to list products
+  const { products, pagination } = await listProductsAdmin(userId, adminId, request);
+
+  // return response
+  res.status(OK).json({ message: 'Products retrieved successfully', products, pagination });
 });
 
 export const listStoreProductsAdminHandler = catchError(async (req, res) => {
@@ -223,4 +253,38 @@ export const listStoreRequestsAdminHandler = catchError(async (req, res) => {
   res
     .status(OK)
     .json({ message: 'Store requests retrieved successfully', storeRequests, pagination });
+});
+
+export const listStoreRequestsByStoreHandler = catchError(async (req, res) => {
+  // validate request
+  const { userId } = req;
+  const adminId = adminParamSchema.parse(req.params.id);
+  const storeId = storeParamSchema.parse(req.params.storeId);
+  const request = storeRequestQuerySchema.parse(req.query);
+
+  // call service to list store requests by store
+  const { storeRequests, pagination } = await listStoreRequestsByStore(
+    userId,
+    adminId,
+    request,
+    storeId,
+  );
+
+  // return response
+  res
+    .status(OK)
+    .json({ message: 'Store requests retrieved successfully', storeRequests, pagination });
+});
+
+export const getStoreRequestAdminHandler = catchError(async (req, res) => {
+  // validate request
+  const { userId } = req;
+  const adminId = adminParamSchema.parse(req.params.id);
+  const storeRequestId = storeRequestParamSchema.parse(req.params.requestId);
+
+  // call service to get store request
+  const storeRequest = await getStoreRequestAdmin(userId, adminId, storeRequestId);
+
+  // return response
+  res.status(OK).json({ message: 'Store request retrieved successfully', storeRequest });
 });

@@ -5,7 +5,7 @@ import {
   RejectRequestSchema,
   StoreRequestParamSchema,
 } from './adminSchema.js';
-import { and, asc, desc, eq, ilike } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, ilike, inArray, lte, sql } from 'drizzle-orm';
 import appAssert from '../utils/appAssert.js';
 import { INTERNAL_SERVER_ERROR, NOT_FOUND } from '../constants/http.js';
 import { db } from '../config/db.js';
@@ -16,12 +16,16 @@ import { Profiles } from '../schema/Profiles.js';
 import { Warnings } from '../schema/Warnings.js';
 import { StoreParamSchema, StoreRequestQuerySchema } from '../store/storeSchema.js';
 import { ProductParamSchema, ProductQuerySchema } from '../product/productSchema.js';
-import { deleteFolder } from '../utils/s3Utils.js';
+import { deleteFolder, getObjectSignedUrl } from '../utils/s3Utils.js';
 import { sendMail } from '../utils/sendMail.js';
-import { getWarningEmailTemplate } from '../utils/emailTemplate.js';
+import {
+  getWarningEmailTemplate,
+  getProductRestoredEmailTemplate,
+} from '../utils/emailTemplate.js';
 import { Reports } from '../schema/Reports.js';
 import { getStoreProduct, listStoreProducts } from '../store/storeService.js';
 import { APP_ORIGIN } from '../constants/env.js';
+import { Wishlists } from '../schema/Wishlists.js';
 
 export const approveStoreRequest = async (
   userId: string,
@@ -95,25 +99,8 @@ export const rejectStoreRequest = async (
 
     appAssert(rejectedRequest, NOT_FOUND, 'Store request not found or already processed');
 
-    const [rejectedStore] = await tx
-      .update(Stores)
-      .set({
-        storeStatus: 'inactive',
-      })
-      .where(and(eq(Stores.id, rejectedRequest.storeId)))
-      .returning();
-
-    await tx
-      .update(Products)
-      .set({ visibility: false })
-      .where(eq(Products.storeId, rejectedStore.id))
-      .returning();
-
-    appAssert(rejectedStore, NOT_FOUND, 'Store not found or already processed');
-
     return {
       storeRequest: rejectedRequest,
-      store: rejectedStore,
     };
   });
 };
@@ -165,7 +152,7 @@ export const reviewStoreProducts = async (
       await deleteFolder(folderPath);
 
       product = deletedProduct;
-    } else if (request.actionTaken !== 'product_hidden') {
+    } else if (request.actionTaken === 'product_hidden') {
       const [hiddenProduct] = await tx
         .update(Products)
         .set({
@@ -222,14 +209,90 @@ export const listWarnings = async (userId: string, adminId: AdminParamSchema) =>
 
   const warnings = await db.query.Warnings.findMany({
     with: {
-      store: true,
-      product: true,
+      store: {
+        columns: {
+          id: true,
+          storeName: true,
+        },
+      },
+      product: {
+        columns: {
+          id: true,
+          productName: true,
+          storeId: true,
+        },
+      },
     },
   });
 
   appAssert(warnings.length, NOT_FOUND, 'No warnings found');
 
   return warnings;
+};
+
+export const restoreStoreProducts = async (
+  userId: string,
+  adminId: AdminParamSchema,
+  storeId: StoreParamSchema,
+  productId: ProductParamSchema,
+) => {
+  return await db.transaction(async (tx) => {
+    const admin = await tx.query.Profiles.findFirst({
+      where: and(eq(Profiles.id, adminId), eq(Profiles.userId, userId), eq(Profiles.role, 'admin')),
+    });
+
+    appAssert(admin, NOT_FOUND, 'Admin not found');
+
+    const store = await tx.query.Stores.findFirst({
+      where: eq(Stores.id, storeId),
+      with: {
+        owner: {
+          columns: {
+            userId: true,
+            fullName: true,
+            id: true,
+          },
+          with: {
+            user: true,
+          },
+        },
+      },
+    });
+
+    appAssert(store, NOT_FOUND, 'Store not found');
+
+    const product = await getStoreProduct(storeId, productId);
+
+    if (!product) {
+      throw new Error('Product not found');
+    }
+
+    const [restoredProduct] = await tx
+      .update(Products)
+      .set({ visibility: true })
+      .where(and(eq(Products.id, productId), eq(Products.storeId, storeId)))
+      .returning();
+
+    appAssert(restoredProduct, NOT_FOUND, 'Product not found or already restored');
+
+    const { data, error } = await sendMail({
+      to: store.owner.user.email,
+      ...getProductRestoredEmailTemplate({
+        productName: restoredProduct?.productName,
+        storeName: store.storeName,
+        price: restoredProduct?.price.toString(),
+        description: restoredProduct?.description as string,
+        quantity: restoredProduct?.quantity,
+        productUrl: `${APP_ORIGIN}/seller/product/${restoredProduct?.id}`,
+      }),
+    });
+    appAssert(data?.id, INTERNAL_SERVER_ERROR, `${error?.name}: ${error?.message}`);
+
+    return {
+      product: restoredProduct,
+      store,
+    };
+  });
 };
 
 export const listProductWarnings = async (
@@ -273,7 +336,19 @@ export const listStoreWarnings = async (
   const warnings = await db.query.Warnings.findMany({
     where: eq(Warnings.storeId, storeId),
     with: {
-      product: true,
+      product: {
+        columns: {
+          id: true,
+          productName: true,
+          storeId: true,
+        },
+      },
+      store: {
+        columns: {
+          id: true,
+          storeName: true,
+        },
+      },
     },
   });
 
@@ -416,7 +491,23 @@ export const getStoreAdmin = async (
         },
       },
       requests: true,
-      warnings: true,
+      warnings: {
+        with: {
+          product: {
+            columns: {
+              id: true,
+              productName: true,
+              storeId: true,
+            },
+          },
+          store: {
+            columns: {
+              id: true,
+              storeName: true,
+            },
+          },
+        },
+      },
     },
   });
 
@@ -442,7 +533,6 @@ export const listStoreProductsAdmin = async (
 export const getProductAdmin = async (
   userId: string,
   adminId: AdminParamSchema,
-  storeId: StoreParamSchema,
   productId: ProductParamSchema,
 ) => {
   const admin = await db.query.Profiles.findFirst({
@@ -451,7 +541,165 @@ export const getProductAdmin = async (
 
   appAssert(admin, NOT_FOUND, 'Admin not found');
 
-  return await getStoreProduct(storeId, productId);
+  const product = await db.query.Products.findFirst({
+    where: eq(Products.id, productId),
+    with: {
+      category: {
+        columns: {
+          id: true,
+          name: true,
+        },
+      },
+      images: {
+        columns: {
+          id: true,
+          imageUrl: true,
+        },
+      },
+      wishlists: {
+        where: eq(Wishlists.productId, productId),
+        columns: {
+          id: true,
+        },
+      },
+    },
+  });
+
+  appAssert(product, NOT_FOUND, 'Product not found');
+
+  const wishlistCount = product.wishlists.length;
+
+  const productWithImages = {
+    id: product.id,
+    productName: product.productName,
+    description: product.description,
+    price: product.price,
+    quantity: product.quantity,
+    createdAt: product.createdAt,
+    updatedAt: product.updatedAt,
+    storeId: product.storeId,
+    categoryId: product.categoryId,
+    visibility: product.visibility,
+    category: {
+      id: product.category.id,
+      name: product.category.name,
+    },
+    wishlistCount,
+    images: await Promise.all(
+      product.images.map(async (image) => ({
+        id: image.id,
+        imageUrl: await getObjectSignedUrl(image.imageUrl),
+      })),
+    ),
+  };
+
+  appAssert(productWithImages, NOT_FOUND, 'Product not found');
+
+  return {
+    product: {
+      ...productWithImages,
+    },
+  };
+};
+
+export const listProductsAdmin = async (
+  userId: string,
+  adminId: AdminParamSchema,
+  query: ProductQuerySchema,
+) => {
+  const admin = await db.query.Profiles.findFirst({
+    where: and(eq(Profiles.id, adminId), eq(Profiles.userId, userId), eq(Profiles.role, 'admin')),
+  });
+
+  appAssert(admin, NOT_FOUND, 'Admin not found');
+
+  const { page, limit, search, storeId, maxPrice, minPrice, sortBy, sortOrder, categoryId } = query;
+
+  const offset = (page - 1) * limit;
+
+  const whereConditions = [eq(Products.visibility, true)];
+
+  if (search) {
+    whereConditions.push(ilike(Products.productName, `%${search}%`));
+  }
+  if (storeId) {
+    whereConditions.push(eq(Products.storeId, storeId));
+  }
+  if (categoryId) {
+    whereConditions.push(eq(Products.categoryId, categoryId));
+  }
+  if (minPrice !== undefined) {
+    whereConditions.push(gte(Products.price, minPrice));
+  }
+  if (maxPrice !== undefined) {
+    whereConditions.push(lte(Products.price, maxPrice));
+  }
+
+  const where = and(...whereConditions);
+
+  const products = await db.query.Products.findMany({
+    where,
+    limit,
+    offset,
+    orderBy:
+      sortBy === 'price'
+        ? sortOrder === 'asc'
+          ? asc(Products.price)
+          : desc(Products.price)
+        : sortBy === 'productName'
+          ? sortOrder === 'asc'
+            ? asc(Products.productName)
+            : desc(Products.productName)
+          : sortOrder === 'asc'
+            ? asc(Products.createdAt)
+            : desc(Products.createdAt),
+    with: {
+      images: {
+        columns: {
+          id: true,
+          imageUrl: true,
+        },
+      },
+    },
+  });
+
+  const total = await db.$count(Products, where);
+
+  appAssert(products, NOT_FOUND, 'Products not found');
+
+  // Get wishlist counts for all products in a single query
+  const productIds = products.map((p) => p.id);
+  const wishlistCounts = await db
+    .select({
+      productId: Wishlists.productId,
+      count: sql<number>`count(*)`.as('count'),
+    })
+    .from(Wishlists)
+    .where(inArray(Wishlists.productId, productIds))
+    .groupBy(Wishlists.productId);
+
+  // Create a map for a quick lookup
+  const wishlistCountMap = new Map(wishlistCounts.map((wc) => [wc.productId, wc.count]));
+
+  const productsWithImages = await Promise.all(
+    products.map(async (product) => ({
+      ...product,
+      images: await Promise.all(
+        product.images.map(async (image) => ({
+          id: image.id,
+          imageUrl: await getObjectSignedUrl(image.imageUrl),
+        })),
+      ),
+      wishlistCount: wishlistCountMap.get(product.id) || 0,
+    })),
+  );
+
+  appAssert(productsWithImages, NOT_FOUND, 'Products not found');
+
+  return {
+    products: productsWithImages,
+    pagination: { page, limit, total, pages: Math.ceil(total / limit) },
+  };
 };
 
 export const listStoreRequestsAdmin = async (
@@ -484,6 +732,76 @@ export const listStoreRequestsAdmin = async (
   appAssert(storeRequests.length, NOT_FOUND, 'No store requests found');
 
   const total = await db.$count(StoreRequests);
+
+  return {
+    storeRequests,
+    pagination: { page, limit, total, pages: Math.ceil(total / limit) },
+  };
+};
+
+export const getStoreRequestAdmin = async (
+  userId: string,
+  adminId: AdminParamSchema,
+  storeRequestId: StoreRequestParamSchema,
+) => {
+  const admin = await db.query.Profiles.findFirst({
+    where: and(eq(Profiles.id, adminId), eq(Profiles.userId, userId), eq(Profiles.role, 'admin')),
+  });
+  appAssert(admin, NOT_FOUND, 'Admin not found');
+
+  const storeRequest = await db.query.StoreRequests.findFirst({
+    where: eq(StoreRequests.id, storeRequestId),
+    with: {
+      store: {
+        with: {
+          owner: {
+            columns: {
+              id: true,
+              fullName: true,
+            },
+          },
+        },
+      },
+    },
+  });
+
+  appAssert(storeRequest, NOT_FOUND, 'Store request not found');
+
+  return storeRequest;
+};
+
+export const listStoreRequestsByStore = async (
+  userId: string,
+  adminId: AdminParamSchema,
+  request: StoreRequestQuerySchema,
+  storeId: StoreParamSchema,
+) => {
+  const admin = await db.query.Profiles.findFirst({
+    where: and(eq(Profiles.id, adminId), eq(Profiles.userId, userId), eq(Profiles.role, 'admin')),
+  });
+
+  appAssert(admin, NOT_FOUND, 'Admin not found');
+
+  const { page, limit } = request;
+  const offset = (page - 1) * limit;
+
+  const storeRequests = await db.query.StoreRequests.findMany({
+    where: eq(StoreRequests.storeId, storeId),
+    offset,
+    limit,
+    with: {
+      store: {
+        columns: {
+          id: true,
+          storeName: true,
+        },
+      },
+    },
+  });
+
+  appAssert(storeRequests.length, NOT_FOUND, 'No store requests found for this store');
+
+  const total = await db.$count(StoreRequests, eq(StoreRequests.storeId, storeId));
 
   return {
     storeRequests,

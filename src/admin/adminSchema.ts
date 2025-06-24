@@ -19,7 +19,6 @@ export const rejectRequestSchema = z.object({
     .string()
     .min(30)
     .max(500, 'Rejection reason must be between 30 and 500 characters')
-    .nonempty('Rejection reason is required')
     .transform((val) => validator.escape(val).trim()),
 });
 
