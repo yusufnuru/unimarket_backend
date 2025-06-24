@@ -76,3 +76,51 @@ export const getWarningEmailTemplate = ({
   </html>
   `,
 });
+
+export const getProductRestoredEmailTemplate = ({
+  productName,
+  storeName,
+  price,
+  description,
+  quantity,
+  productUrl,
+}: Omit<WarningEmailParams, 'reason' | 'actionTaken'>) => ({
+  subject: 'Good News: Your Product Has Been Restored',
+  text: `
+  Your product "${productName}" from store "${storeName}" has been successfully restored and is now visible to customers.
+
+  Details:
+  - Price: ${price}
+  - Description: ${description}
+  - Quantity: ${quantity}
+
+  You can view your product here: ${productUrl}
+  `,
+  html: `
+  <!doctype html>
+  <html lang="en-US">
+  <head>
+    <meta charset="UTF-8">
+    <title>Product Restored Notification</title>
+    <style>
+      body { font-family: 'Open Sans', sans-serif; background-color: #f9f9f9; padding: 20px; }
+      .container { background: #fff; border-radius: 8px; padding: 20px; max-width: 600px; margin: auto; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+      h2 { color: #28a745; }
+      p { line-height: 1.6; }
+      .btn { display: inline-block; padding: 10px 20px; background: #28a745; color: #fff; border-radius: 5px; text-decoration: none; margin-top: 20px; }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h2>Good News: Your Product Has Been Restored</h2>
+      <p><strong>Product Name:</strong> ${productName}</p>
+      <p><strong>Store Name:</strong> ${storeName}</p>
+      <p><strong>Price:</strong> ${price}</p>
+      <p><strong>Description:</strong> ${description}</p>
+      <p><strong>Quantity:</strong> ${quantity}</p>
+      <a href="${productUrl}" class="btn" target="_blank">View Product</a>
+    </div>
+  </body>
+  </html>
+  `,
+});
