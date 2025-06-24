@@ -1,4 +1,4 @@
-import { pgEnum, pgTable, timestamp, unique, uuid } from 'drizzle-orm/pg-core';
+import { pgEnum, pgTable, timestamp, unique, uuid, varchar } from 'drizzle-orm/pg-core';
 import { relations, sql } from 'drizzle-orm';
 import { Products } from './Products.js';
 import { Profiles } from './Profiles.js';
@@ -16,7 +16,7 @@ export const Reports = pgTable(
       .notNull()
       .references(() => Products.id, { onDelete: 'cascade' }),
     reason: reportReasonEnum('reason').notNull(),
-    description: uuid('description').notNull(),
+    description: varchar('description', { length: 500 }).notNull(),
     createdAt: timestamp('created_at', { mode: 'string' }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { mode: 'string' })
       .notNull()
