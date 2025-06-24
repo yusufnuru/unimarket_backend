@@ -169,7 +169,7 @@ export const createReport = async (
       .insert(Reports)
       .values({
         buyerId: buyer.id,
-        productId: product.id,
+        productId: request.productId,
         reason: request.reason as Reason,
         description: request.description,
       })
