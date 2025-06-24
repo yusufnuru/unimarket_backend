@@ -247,6 +247,11 @@ export const storeQuerySchema = z.object({
     })
     .optional()
     .transform((val) => (val ? validator.escape(val).trim() : val)),
+  sortOrder: z
+    .enum(['asc', 'desc'], {
+      errorMap: () => ({ message: 'Invalid sortOrder value' }),
+    })
+    .optional(),
 });
 
 export const storeParamSchema = z

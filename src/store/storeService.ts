@@ -237,18 +237,24 @@ export const getStoreProduct = async (storeId: string, productId: string) => {
 };
 
 export const listStores = async (query: StoreQuerySchema) => {
-  const { page, limit, search, sortBy } = query;
+  const { page, limit, search, sortBy, sortOrder } = query;
   const offset = (page - 1) * limit;
 
   const where = search
     ? and(eq(Stores.storeStatus, 'active'), ilike(Stores.storeName, `%${search}%`))
     : eq(Stores.storeStatus, 'active');
 
-  const orderBy = sortBy
-    ? sortBy === 'name'
-      ? asc(Stores.storeName)
-      : asc(Stores.createdAt)
-    : desc(Stores.createdAt);
+  // Determine the order by clause based on the sort parameters
+  const orderBy =
+    sortBy === 'name'
+      ? sortOrder === 'asc'
+        ? asc(Stores.storeName)
+        : desc(Stores.storeName)
+      : sortBy === 'joined'
+        ? sortOrder === 'asc'
+          ? asc(Stores.createdAt)
+          : desc(Stores.createdAt)
+        : desc(Stores.createdAt); // Default sort
 
   const stores = await db.query.Stores.findMany({
     where,
