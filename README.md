@@ -112,9 +112,44 @@ The server will start on `http://localhost:4000` with hot reload enabled.
 - **Restart database**: `pnpm run db:dev:restart`
 - **Open Drizzle Studio**: `pnpm run db:studio`
 
-### Database Migrations
+### Database Generate Migrations
 
 - **Generate migration**: `pnpm run drizzle:dev:generate`
+
+#### Custom Generated Migration required
+
+- **Create migration**: `pnpm run drizzle:dev:generate -custom`
+- **Generate custom migration**: `pnpm run drizzle:dev:generate --custom`
+  - After generating, add this trigger function to the migration file:
+    ```sql
+    -- Custom SQL migration file, put your code below! --
+    CREATE OR REPLACE FUNCTION update_has_store_trigger()
+    RETURNS TRIGGER AS $$
+    BEGIN
+      -- If role is 'seller', set has_store to true, else false
+      IF NEW.role = 'seller' THEN
+        NEW.has_store := TRUE;
+    ELSE
+        NEW.has_store := FALSE;
+    END IF;
+
+      -- Update timestamp on insert or update
+      NEW.updated_at := NOW();
+
+    RETURN NEW;
+    END;
+    $$ LANGUAGE plpgsql;
+
+    DROP TRIGGER IF EXISTS profile_has_store_trigger ON profiles;
+
+    CREATE TRIGGER profile_has_store_trigger
+        BEFORE INSERT OR UPDATE ON profiles
+                             FOR EACH ROW
+                             EXECUTE FUNCTION update_has_store_trigger();
+    ```
+  - This trigger automatically sets has_store field based on role and updates timestamps
+
+### Database Migrations
 - **Apply migrations**: `pnpm run drizzle:dev:migrate`
 - **Push schema changes**: `pnpm run drizzle:dev:deploy`
 
