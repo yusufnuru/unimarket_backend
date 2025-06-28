@@ -729,7 +729,7 @@ export const listStoreRequestsAdmin = async (
     },
   });
 
-  appAssert(storeRequests.length, NOT_FOUND, 'No store requests found');
+  appAssert(storeRequests, NOT_FOUND, 'No store requests found');
 
   const total = await db.$count(StoreRequests);
 
